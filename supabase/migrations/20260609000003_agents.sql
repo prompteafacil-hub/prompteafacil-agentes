@@ -89,7 +89,7 @@ DECLARE
   v_ver           UUID;
   v_body          TEXT;
   v_global_body   TEXT;
-  default_names   JSONB := '{"setter":"Carlos","soporte":"Sofía","agendamiento":"Andrés"}'::jsonb;
+  default_names   JSONB := '{"setter":"Mateo","soporte":"Sofía","agendamiento":"Andrés"}'::jsonb;
   starters        JSONB := jsonb_build_object(
     'setter',       'Eres {{agent_name}}, agente de ventas de {{business_name}}. Tu objetivo es calificar leads y agendar citas. Sé amable, profesional y directo. Responde en mensajes cortos, como en WhatsApp.',
     'soporte',      'Eres {{agent_name}}, agente de soporte de {{business_name}}. Responde dudas con precisión y empatía. Si no puedes resolver algo, ofrece escalar con un humano. Responde en mensajes cortos.',

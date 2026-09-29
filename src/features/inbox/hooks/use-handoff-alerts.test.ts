@@ -19,8 +19,8 @@ function setDocumentTitle(title: string) {
 
 test("getBaseTitle captura document.title la primera vez que se pide", () => {
   __resetBaseTitleForTests();
-  setDocumentTitle("Agente WhatsApp");
-  assert.equal(getBaseTitle(), "Agente WhatsApp");
+  setDocumentTitle("prompteafacil agentes");
+  assert.equal(getBaseTitle(), "prompteafacil agentes");
 });
 
 test("un título que arranca con paréntesis ya no se mutila", () => {
@@ -35,18 +35,18 @@ test("un título que arranca con paréntesis ya no se mutila", () => {
 
 test("dos montajes no acumulan contador: la segunda lectura no vuelve a tocar document.title", () => {
   __resetBaseTitleForTests();
-  const doc = { title: "Agente WhatsApp" };
+  const doc = { title: "prompteafacil agentes" };
   (globalThis as unknown as { document: typeof doc }).document = doc;
 
   const first = getBaseTitle();
-  assert.equal(first, "Agente WhatsApp");
+  assert.equal(first, "prompteafacil agentes");
 
   // Instancia A "monta" y deja el contador puesto en el título real.
-  doc.title = "(1) Agente WhatsApp";
+  doc.title = "(1) prompteafacil agentes";
 
   // Instancia B monta después: como el original ya quedó cacheado en la
   // primera llamada, no vuelve a leer document.title y no hereda el prefijo
   // que dejó A.
   const second = getBaseTitle();
-  assert.equal(second, "Agente WhatsApp");
+  assert.equal(second, "prompteafacil agentes");
 });

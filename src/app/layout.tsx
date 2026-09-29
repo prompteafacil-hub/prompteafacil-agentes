@@ -15,7 +15,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Agente WhatsApp",
+  title: "prompteafacil agentes",
   description: "Plataforma de inbox conversacional para WhatsApp con IA",
 };
 

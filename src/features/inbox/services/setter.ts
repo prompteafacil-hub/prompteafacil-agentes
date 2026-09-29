@@ -19,7 +19,7 @@ function getModel() {
     headers: {
       "HTTP-Referer":
         process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-      "X-Title": "Agente WhatsApp",
+      "X-Title": "prompteafacil agentes",
     },
   });
   // Use haiku-class model for structured outputs — cost-efficient.

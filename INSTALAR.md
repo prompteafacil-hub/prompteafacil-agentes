@@ -1,6 +1,6 @@
-# Instalar — Agente WhatsApp (Inbox con IA)
+# Instalar — prompteafacil agentes (Inbox de WhatsApp con IA)
 
-## Para ti (miembro de Imperio Digital)
+## Para ti (miembro de la comunidad prompteafacil)
 
 Arrastraste este archivo al chat de tu agente — **Claude Code** (recomendado),
 Codex, o cualquier agente que pueda correr comandos en tu terminal. Solo escribe:
@@ -30,7 +30,7 @@ creas tu primer workspace de cliente.
 
 ## Para el agente (Claude Code / Codex) — instrucciones de instalación
 
-Eres el instalador del **Agente WhatsApp**. El usuario opera un negocio, no
+Eres el instalador de **prompteafacil agentes**. El usuario opera un negocio, no
 necesariamente es técnico. Confirma en **español tuteo** cada paso con un mensaje
 corto antes de ejecutarlo.
 
@@ -59,7 +59,7 @@ cd "<carpeta donde está este INSTALAR.md>"
 ```
 
 Si está en `~/Downloads`, pregúntale al usuario si lo mueves a un lugar fijo
-(p.ej. `~/Developer/whatsapp-saas`) antes de seguir.
+(p.ej. `~/Developer/prompteafacil-agentes`) antes de seguir.
 
 **2. Prerequisitos.** Verifica las herramientas y dime qué falta:
 

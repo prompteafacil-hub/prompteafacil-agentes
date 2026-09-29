@@ -1,4 +1,4 @@
-# Agente WhatsApp — Inbox Conversacional con IA
+# prompteafacil agentes — Inbox de WhatsApp con IA
 
 Plataforma **multi-tenant** de inbox de WhatsApp con un agente de IA operable por
 humano: inbox tipo WhatsApp Web, CRM, motor de agente con handoff, agendamiento y
@@ -9,8 +9,8 @@ cumplimiento de la ventana de 24h de Meta. Cada workspace es un cliente.
 Clona el repo, ábrelo en Claude Code y deja que el agente lo instale:
 
 ```bash
-git clone https://github.com/Carlos-Dominguez-faber/whatsapp-saas.git
-cd whatsapp-saas
+git clone https://github.com/prompteafacil-hub/prompteafacil-agentes.git
+cd prompteafacil-agentes
 claude "lee INSTALAR.md e instálalo"
 ```
 
@@ -156,5 +156,8 @@ por este software, incluso con fines comerciales y sin pagar regalías. La únic
 condición es conservar el aviso de copyright y el texto de la licencia en las
 copias o partes sustanciales que distribuyas. Se entrega **sin garantía**.
 
-_Nacido como material para miembros de Imperio Agentico — el código es MIT para
-cualquiera._
+## Créditos
+
+Basado en [whatsapp-saas](https://github.com/Carlos-Dominguez-faber/whatsapp-saas)
+de Carlos Domínguez (MIT). Adaptado y mantenido por
+[prompteafacil](https://www.skool.com/aprende-de-ia-4174/about) para su comunidad.

@@ -6,7 +6,7 @@ import { isSignupOpen } from "@/features/auth/services/signup-gate";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Crear cuenta — Agente WhatsApp",
+  title: "Crear cuenta — prompteafacil agentes",
 };
 
 export default async function SignupPage() {
