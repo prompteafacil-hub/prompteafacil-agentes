@@ -153,15 +153,20 @@ node scripts/seed-admin.mjs
 
 (Crea SOLO el super admin. Los workspaces de clientes se crean desde la app, paso 10.)
 
-**9. Agenda el cron del buffer (automático).**
+**9. Agenda los crons (automático).**
 
 ```bash
 node scripts/setup.mjs cron-apply
 ```
 
-Usa el `SUPABASE_ACCESS_TOKEN` del paso 7 para agendar el cron vía Management API e
-imprime la verificación. Si no hay token, cae al camino manual: corre
+Agenda tres jobs: `buffer-flush` (responde los mensajes) y `automations` (corre las
+automatizaciones), cada minuto, y `classify-topics` (el análisis de temas de
+**Análisis**), cada 5 minutos; mientras nadie cree un tema no gasta nada. Usa el `SUPABASE_ACCESS_TOKEN` del paso 7
+para agendarlos vía Management API e imprime la verificación. Correrlo otra vez no
+duplica nada: actualiza los jobs existentes. Si no hay token, cae al camino manual: corre
 `node scripts/setup.mjs cron-sql` y pega el SQL en **Supabase → SQL Editor → Run**.
+En macOS, `node scripts/setup.mjs cron-sql | pbcopy` lo deja en el portapapeles: por
+el pipe solo pasa el SQL (los mensajes van a la pantalla).
 
 **10. Entra y crea tu primer workspace.** Abre `https://TU-URL.vercel.app/login`,
 entra con tu super admin, y en el **panel de agencia** (`/workspaces`) dale **crear
@@ -567,6 +572,330 @@ las migraciones, así que las migraciones van **antes** de `vercel --prod`.
 - **Eventos:** las sesiones ya no pueden insertar filas en `events` (solo el
   servidor), así nadie puede falsear un registro ni silenciar un aviso.
 
+**Motor de automatizaciones (Fase 4, principios de oct-2026):**
+
+Las reglas de **Configuración → Automatizaciones** ahora sí se ejecutan solas, y
+pueden mandar plantillas de WhatsApp que **Meta cobra** y que llegan a clientes
+reales. El orden del upgrade es:
+
+```bash
+SUPABASE_DB_PASSWORD='tu-contraseña-de-la-base' node scripts/setup.mjs db-push   # 1. migraciones
+vercel --prod                                                                     # 2. deploy
+node scripts/setup.mjs cron-apply                                                 # 3. agenda el job 'automations'
+```
+
+Sin el paso 3 no corre nada: las reglas se guardan, pero ningún job las ejecuta.
+
+- **Todas las reglas que estaban encendidas se apagan en el upgrade.** Antes nada
+  las ejecutaba; encenderlas solas sería mandar mensajes que nadie revisó. La pestaña
+  muestra un aviso con cuántas se apagaron, y cada una dice por qué está apagada.
+  Revísalas y enciende las que quieras. Editar una regla nunca la enciende: solo el
+  interruptor.
+- **Disparadores:** primer mensaje, palabra clave, pide humano, lead calificado y
+  recordatorio de cita (de 1 a 168 horas antes, solo dentro de la ventana horaria de
+  la regla, 8 a 22 por defecto). **Acciones:** mandar plantilla, asignar a un
+  agente, etiquetar, cerrar y pasar a humano. Hasta 20 reglas activas por workspace.
+- **Nada se manda tarde:** cada evento vence si no se ejecutó a tiempo (palabra
+  clave 1 h, pide humano 2 h, primer mensaje y lead calificado 6 h).
+- **Cuándo sale un recordatorio:** toca `hours_before` antes de la cita; si esa hora
+  cae fuera del horario de envío de la regla (8 a 22 por defecto), toca cuando el
+  horario abre. Sale en ese momento. Se omite solo si:
+  - faltan menos de 30 minutos para la cita (o ya pasó);
+  - le tocaba antes de encender la regla (una regla nueva no manda los recordatorios
+    que ya debían haber salido);
+  - pasaron más de 30 minutos de horario de envío desde que le tocaba (el cron
+    estuvo caído).
+
+  Si al ejecutarse está fuera del horario, espera a que abra (esa espera no cuenta
+  como intento fallido). El horario se calcula con la hora local del negocio,
+  incluidos los cambios de horario de verano. Aunque haya muchas citas dentro de la
+  anticipación de una regla, cada una sale cuando le toca: las que ya se avisaron no
+  ocupan el lote de 50 del escaneo. Si una cita se movió después de que su
+  recordatorio quedó en cola, ese recordatorio no sale, y por lo general sale el de
+  la hora nueva cuando le toque. Hay dos casos en que no: si la cita vuelve a una
+  hora que ya tuvo y ya se avisó (A→B→A), y si se adelanta a una hora para la que ya
+  no queda la anticipación de la regla (una cita movida a mañana temprano con un
+  recordatorio de 24 h).
+- **Recordatorios con la hora local del negocio:** la zona sale de la misma
+  configuración que la agenda de la Fase 3 (Business info o HighLevel; si no hay
+  ninguna, `America/Mexico_City`). Antes de mandarlo, la app confirma la cita en
+  HighLevel, antes que cualquier otra revisión: si la cancelaron o la movieron, no
+  manda el recordatorio y actualiza la cita local (si esa escritura falla, reintenta).
+  Si HighLevel no responde, no encuentra la cita o devuelve un estado desconocido,
+  reintenta en vez de mandarlo a ciegas (y no marca la cita como cancelada). Una
+  cita de HighLevel en un workspace sin HighLevel conectado no recibe recordatorio
+  (motivo `hl_not_connected`).
+- **Límites de envío:** una misma regla no le manda plantilla al mismo contacto más
+  de una vez cada 24 horas (en los recordatorios, el límite es por cita: dos citas
+  del mismo contacto reciben cada una el suyo), y un workspace no manda más de 300
+  plantillas automáticas en 24 horas.
+- **Qué pasó con cada regla:** la pestaña muestra la última ejecución de cada regla
+  (y su motivo si se omitió o falló) y cuántas fallas tuvo en 24 horas. Un aviso
+  rojo aparece si se alcanzó el tope diario o si algún envío quedó con resultado
+  desconocido. Cuando se agotan los intentos, el motivo dice por qué
+  (`max_attempts:<causa>`). Todavía no hay un historial completo de ejecuciones.
+- **Sin duplicados:** cada envío se marca antes de salir. Si no se sabe si salió
+  (por ejemplo, WhatsApp no contestó a tiempo), el intento queda como fallido con
+  "resultado desconocido" en lugar de mandarse otra vez. Solo se reintenta lo que
+  WhatsApp rechazó sin enviarlo (límites de envío). Si Meta pausa la plantilla de una
+  regla, la regla se apaga y la pestaña lo explica; con YCloud ese aviso llega
+  después por el webhook de estados, y ahí también se apaga la regla y la ejecución
+  queda como fallida. Si una variable no tiene dato (un contacto sin nombre), no se
+  manda con el hueco: la ejecución falla con `missing_variable:<variable>`.
+- **Las plantillas se mandan en el idioma elegido en la regla.** Las reglas
+  guardadas antes usan el idioma de la plantilla aprobada (o `es`).
+- **Bajas (STOP):** si un contacto escribe solo `STOP`, `UNSUBSCRIBE`, `DARME DE BAJA`,
+  `NO MÁS MENSAJES` o `NO QUIERO RECIBIR MENSAJES`, o toca el botón de Meta
+  "Detener promociones" / "Stop promotions" (sin importar mayúsculas ni acentos),
+  queda dado de baja de las **automatizaciones y plantillas**. El agente y el equipo
+  **sí** pueden seguir respondiéndole mientras su conversación esté abierta (24 h
+  desde su último mensaje); el aviso automático de traspaso de una automatización no
+  le llega. Escribir de nuevo **no** lo vuelve a dar de alta; vuelve con `START`,
+  `SUSCRIBIRME` o `REANUDAR MENSAJES`. Palabras sueltas como "baja", "alta" o "alto"
+  no cuentan (son respuestas normales: "¿planta alta o baja?"), ni una frase que solo
+  contiene la palabra ("quiero darme de baja del plan"). La base de datos aplica la
+  baja junto con el mensaje, así que no se pierde ni la deshace un reenvío del mismo
+  mensaje, y decide por la hora en que el cliente lo mandó: un STOP que llega tarde no
+  deshace un START posterior, y un START no quita una baja manual hecha después. Si
+  los dos llegan con la misma hora, gana el STOP.
+- **La baja es del número:** queda en `contact_opt_outs` por teléfono, así que borrar
+  y volver a crear el contacto, o pasarle ese número a otro contacto, no la quita.
+  Cuenta como el mismo número con o sin el 1 de los celulares de México (`+52 1 …`) o
+  el 9 de Argentina (`+54 9 …`), y un STOP o START aplica a todos los contactos con
+  ese número. Solo un admin o manager puede borrar contactos.
+- **Reactivar a mano:** en el panel del contacto, solo un **admin o manager** puede
+  volver a dar de alta a quien pidió la baja; la base lo exige también. Cada cambio
+  manual de opt-in queda como evento `contact_opt_in_changed` con quién lo hizo.
+  Guardar el panel sin tocar el interruptor ya no cambia el opt-in, y si el contacto
+  escribe STOP mientras guardas, la app pide recargar en vez de borrarlo. Las bajas
+  manuales hechas antes de esta versión cuentan como bajas explícitas (el `db push`
+  imprime cuántas y deja un evento por cada una).
+- **Pie de baja de las plantillas:** usa "Responde STOP para no recibir más
+  mensajes" (el generador con IA y la casilla del formulario lo ponen igual). No
+  escribas "BAJA": ya no da de baja a nadie.
+- **Permisos:** las reglas, los eventos y la cola de ejecuciones solo los escribe el
+  servidor; los miembros solo los leen. Una automatización nunca puede apuntar a un
+  contacto o conversación de otro workspace.
+- **Para apagar todo el motor** sin tocar las reglas, en Supabase → SQL Editor:
+  `select cron.unschedule('automations');` (vuelve con `setup.mjs cron-apply`).
+- La ruta del cron puede durar hasta 120 segundos (Fluid Compute, igual que el
+  buffer).
+
+**Análisis de temas, `/probar` y limpieza (Fase 5, octubre de 2026):**
+
+```bash
+SUPABASE_DB_PASSWORD='tu-contraseña-de-la-base' node scripts/setup.mjs db-push   # 1. migraciones
+vercel --prod                                                                     # 2. deploy
+node scripts/setup.mjs cron-apply                                                 # 3. agenda 'classify-topics'
+```
+
+El paso 3 agenda el job nuevo y reagenda los otros dos sin duplicarlos. Sin él, la
+pantalla de Análisis funciona pero nunca se analiza nada (avisa que hay
+conversaciones sin analizar).
+
+- **Análisis** (`/analisis`, en el menú de arriba): un admin o manager crea hasta 10
+  temas (un nombre y qué debe detectar; no puede haber dos activos con el mismo
+  nombre, sin contar mayúsculas ni acentos). Cada 5 minutos, el job `classify-topics`
+  lee las conversaciones en las que el **cliente** escribió algo nuevo (una hora
+  después de su último mensaje; primero lo más antiguo, y los workspaces se turnan:
+  primero el que lleva más tiempo sin que se le lea nada; el reprocesamiento de temas
+  nuevos lleva su propio turno)
+  y marca qué temas plantea. Solo cuenta lo que escribe el cliente: lo que dicen el
+  agente o el equipo es contexto, las notas internas nunca se mandan al modelo, y una
+  respuesta o un recordatorio no hacen que se vuelva a analizar. El tablero muestra
+  hasta ayer: conversaciones, cuántas agendaron y cuántas se derivaron, el ranking de
+  temas, la tendencia por semana y el cruce con etiquetas; cada celda abre las
+  conversaciones de evidencia. Cualquier miembro lo ve.
+- **Solo cuenta lo analizado.** Un tema se mide sobre las conversaciones ya leídas
+  ("sobre N de M analizadas"); las que faltan no cuentan ni a favor ni en contra, y el
+  tablero dice cuántas faltan y por qué: pendientes (se leen en las próximas horas),
+  que fallaron tres veces (se reintentan si el cliente vuelve a escribir) o de más de
+  30 días (ya no se leerán).
+- **Cada clave de OpenRouter lleva su propia salud**, que se guarda entre corridas
+  (la de cada workspace con clave propia, y la de la agencia para todos los demás):
+  - si OpenRouter **rechaza la clave** (sin créditos, revocada, limitada, o un 404
+    porque su política de datos no deja usar el modelo), queda caída 15 minutos;
+  - si **falla tres veces seguidas** (error 5xx, sin red, tiempo agotado, o un
+    "200" de OpenRouter que trae el error del proveedor), queda caída 15 minutos, y
+    cada caída seguida dura el doble (30 min, 1 h… hasta 6 horas). Una clave que
+    usan varios workspaces (la de la agencia, o una propia pegada en dos) solo cae
+    si fallan **al menos dos** de ellos: si falla uno solo (por ejemplo, porque sus
+    conversaciones rozan el tiempo límite), espera solo ese workspace, con las
+    mismas reglas;
+  - mientras está caída no se usa, y sus workspaces esperan; al terminar la espera se
+    prueba con **una sola** llamada: si responde, vuelve a la normalidad.
+  Los demás workspaces siguen a su ritmo: la clave caída de uno nunca detiene a los
+  otros. El tablero de los afectados dice que la clave está fallando (la propia), que
+  el análisis no está respondiendo (la de la agencia) o que las llamadas de ese
+  espacio están fallando. Si cambias la clave, el aviso de la vieja desaparece. Si la caída es la de la
+  agencia, el job responde 500 (lo ves en `net._http_response`); las claves propias
+  caídas nunca lo hacen. Una clave propia que no se puede descifrar cuenta como caída
+  de ese workspace: nunca se le cobra a la de la agencia.
+- **Si falla una conversación** con un error pasajero, espera una hora sin gastar
+  intento y la corrida sigue con las demás; si la misma conversación vuelve a fallar
+  así, espera el doble cada vez (2, 4, 8… hasta 24 horas) y vuelve a una hora en
+  cuanto se lee. La corrida solo se detiene si falla nuestra base de datos.
+- **Si el modelo rechaza un mensaje** (contenido, moderación, respuesta inválida),
+  la conversación espera una hora (dos, la segunda vez) antes del siguiente intento;
+  al tercer fallo queda apartada hasta que el cliente vuelva a escribir.
+- **Costo:** usa `openai/gpt-4o-mini` por OpenRouter, con la clave del workspace (o
+  la de la agencia), y tiene un tope propio de **600,000 tokens por día** (UTC) por
+  workspace, hasta unos USD 0.10 a 0.20. **No cuenta en el presupuesto diario del
+  agente**: no lo degrada ni lo corta, y el agente tampoco le quita cupo. El día más
+  caro de un workspace pasa a ser 1,600,000 tokens (1,000,000 del agente + 600,000
+  del análisis). El texto de los clientes va a OpenAI a través de OpenRouter aunque el
+  agente use otro modelo (sin nombres ni teléfonos).
+- **Hasta dónde mira:** 30 días hacia atrás, los últimos 60 mensajes de cada
+  conversación y hasta 800 caracteres por mensaje; si algo quedó fuera, el tablero lo
+  dice. Un tema nuevo reprocesa los 30 días anteriores a su creación. Una caída del
+  proveedor no hace que se salte ninguna conversación: el reprocesamiento la espera.
+  Solo salta una que falla tres veces seguidas (con horas de espera entre una y otra)
+  mientras la clave sigue funcionando. Mientras eso no termina, o si el tema se creó
+  dentro del período que estás viendo, se mide solo desde la fecha que aparece junto a él, y sin comparación con el período anterior:
+  antes de esa fecha no se analizó, y contarlo como 0 % daría números falsos.
+- **Capacidad:** cada corrida lee unas 15 a 20 conversaciones (depende de lo que
+  tarde el modelo); cada 5 minutos, eso son unas 4,500 al día para toda la
+  instalación, repartidas por turnos entre los workspaces. Cada workspace tiene además
+  su tope de 600,000 tokens diarios: unas 400 conversaciones al día (a unos 1,500
+  tokens cada una). Si un workspace recibe más, lo que no cabe espera al día siguiente (primero lo de las últimas 48 horas, de lo más
+  antiguo a lo más nuevo; después lo anterior, de lo más reciente hacia atrás) y el
+  tablero muestra cuántas faltan. Para correrlo solo de noche, cambia la línea `'*/5 * * * *'` de
+  `supabase/cron/schedule-classify-topics.sql` por `'*/5 4-8 * * *'` y vuelve a correr
+  `cron-apply`: gasta algo menos, pero lo de ayer llega incompleto a la mañana y se
+  completa la noche siguiente.
+- **Para apagarlo:** `select cron.unschedule('classify-topics');` en el SQL Editor.
+  Sin temas activos tampoco gasta nada.
+- **`/probar`:** una pantalla con solo el chat del agente, para que alguien lo pruebe
+  sin el resto de la app (por ejemplo, un cliente antes de salir en vivo): comparte
+  `https://TU-URL/probar`. La pestaña **Prueba** de cada agente (en **Configuración →
+  Agentes**) también la enlaza.
+  - Cualquier miembro del workspace, incluido un viewer, chatea con el agente
+    **activo**, con su prompt publicado y su modelo. No se manda nada por WhatsApp.
+  - Solo corren las herramientas de consulta (ver disponibilidad, consultas de n8n),
+    también para un admin: desde ahí nadie agenda, cancela ni escribe en un CRM.
+  - Hasta 20 mensajes por persona y 60 por workspace cada hora, de hasta 1,000
+    caracteres, y **100,000 tokens al día** por workspace (UTC). Cada mensaje reserva
+    antes lo más que puede gastar (dos pasos del modelo con el prompt completo y 500
+    tokens de respuesta); lo reservado de un mensaje en curso cuenta, y al terminar
+    se ajusta a lo real. Alcanza para unos 30 mensajes al día con un prompt de
+    4 KB, 19 con uno de 10 KB y 11 con uno de 20 KB. También cuentan en el presupuesto diario del workspace: se
+    pausan desde los 800,000 tokens, y un mensaje que llevaría al workspace a ese
+    umbral se rechaza, para que `/probar` nunca haga que el agente atienda a clientes
+    con el modelo barato.
+  - Si el agente no responde nada, la pantalla lo dice y el mensaje vuelve a la caja
+    de texto.
+  - Un mensaje que falla se ajusta a lo que ya gastó: nada si falló antes de llegar
+    al modelo (la base de conocimiento caída), o los pasos que el modelo terminó si
+    el proveedor contestó con un error (la clave rechazada, un 5xx). Así un paso que
+    usó una herramienta sigue contando, y los reintentos durante una caída no se
+    comen el tope. Tras un tiempo agotado o un corte de red se queda la reserva
+    completa, porque no se sabe qué gastó.
+  - Usa una sola herramienta por mensaje.
+  - **No aísla datos.** Solo esconde el menú: con la misma cuenta se pueden abrir el
+    inbox, el dashboard y los prompts. Si se la das a alguien de fuera, hazlo en un
+    workspace de demostración, sin conversaciones reales.
+  - Si alguien abre el enlace sin sesión, al entrar vuelve a `/probar`.
+- **La clave pública (`anon`) ya no tiene permisos sobre ninguna tabla.** Es la
+  clave que viaja en el navegador; hasta ahora solo las políticas de RLS impedían que
+  leyera algo. La app no la usa sin sesión. Las tablas que creen las migraciones
+  (como `postgres`) tampoco se los dan. Las que crees desde el editor de tablas de
+  Supabase Studio sí los reciben (las crea otro rol, `supabase_admin`, cuyos permisos
+  por defecto no se pueden cambiar desde aquí): quítaselos con
+  `revoke all on public.tu_tabla from anon;`. Si agregaste tablas propias que leías
+  sin sesión, tendrás que darle el permiso a mano (`grant select on public.tu_tabla to
+  anon;`) y pensar si de verdad quieres eso.
+- **Historial de automatizaciones: 30 días.** Un job de pg_cron que agenda el propio
+  `db-push` (`automation-history-purge`, cada hora) borra las ejecuciones terminadas
+  y los eventos sin ejecución de más de 30 días. Nunca borra una ejecución en cola ni
+  un evento que todavía la necesita.
+- **Panel de ejecuciones:** en **Configuración → Automatizaciones**, un admin o
+  manager ve las ejecuciones recientes: qué regla, a quién, si se ejecutó, se omitió
+  o falló, y por qué. Se filtran por resultado.
+
+**Cal.com, HubSpot y el cron del buffer (Fase 5, octubre de 2026):**
+
+Solo `db-push` y deploy; no agrega crons (el `cron-apply` de la sección anterior
+sigue haciendo falta si no lo has corrido).
+
+- **Cal.com, beta** (Configuración → Integraciones → Cal.com, solo un admin la
+  guarda; las tools vienen apagadas en Configuración → Tools con la etiqueta
+  "Beta"; pruébalas primero con una cuenta de Cal.com de prueba):
+  - `list_event_types_calcom` y `check_availability_calcom` (lectura): los servicios
+    y los horarios libres, en la **zona horaria del negocio** (Configuración →
+    Negocio), la misma que usa el agente para hablar de fechas. Cal.com ya no tiene
+    su propio campo de zona; al guardar la integración se borra el que hubiera.
+  - `schedule_calcom`: agenda con el email del cliente (si no lo tiene, el agente se
+    lo pide). Reserva el horario en la base antes de llamar a Cal.com, así que un
+    reintento no agenda dos veces.
+    - Si la llamada murió antes de mandar nada, el horario se libera a los 2 minutos.
+    - Si Cal.com pudo haber agendado (la llamada se cortó a medio envío), el horario
+      no se libera solo: cuando el cliente vuelve a pedirlo, o a los 10 minutos en el
+      cron `automations`, la app pregunta a Cal.com por su email, servicio y hora
+      (y revisa que la respuesta sea de ese cliente y ese servicio): si la reserva
+      existe, la vincula; si Cal.com responde completo que no existe, la libera
+      (evento `calcom_claim_released`); si no, deja una nota interna en la
+      conversación (una vez) y un evento `calcom_claim_unresolved`. Las reservas
+      pendientes de una versión anterior (#15) nunca se liberan solas: siempre
+      dejan la nota.
+    - Para liberar uno a mano, después de revisar en Cal.com, en Supabase → SQL
+      Editor: `update appointments set status = 'cancelled', meta = meta ||
+      '{"calcom_claim":"released"}' where id = '<id>' and calcom_booking_uid is
+      null and status = 'booked';` (o, si la reserva sí existe: `update
+      appointments set calcom_booking_uid = '<uid>', meta = '{}' where id = '<id>'
+      and calcom_booking_uid is null and status = 'booked';`). Si responde `UPDATE
+      0`, el claim ya cambió: vuelve a revisarlo.
+  - Los tipos de evento **recurrentes** o **con cupos** (varias personas por
+    horario) no se agendan por WhatsApp.
+  - Una reserva que el negocio tiene que **confirmar** en Cal.com se le presenta al
+    cliente como "solicitada, pendiente de confirmación", y no recibe recordatorio
+    mientras siga pendiente.
+  - `list_calcom_appointments`, `cancel_calcom` y `reschedule_calcom`: el agente pasa
+    la fecha y hora de la cita que el cliente confirmó, copiada de la lista. Cal.com
+    manda: la app lee cada cita en Cal.com antes de actuar (y sigue una cita que
+    alguien movió allá; la cita movida conserva su recordatorio). Solo ve las citas
+    que se agendaron **por WhatsApp**: las que el cliente hizo en la página de
+    Cal.com no aparecen.
+  - Si Cal.com no responde a tiempo al agendar, cancelar o mover, el agente no le
+    dice al cliente ni que sí ni que no: deja una nota interna y pasa la
+    conversación a una persona.
+  - Los recordatorios del motor de automatizaciones también sirven para citas de
+    Cal.com: antes de mandar uno, la app confirma en Cal.com que la cita sigue en
+    pie a esa hora.
+- **HubSpot, beta** (Configuración → Integraciones → HubSpot, solo un admin):
+  alternativa a HighLevel como CRM. **Un solo CRM activo por workspace**: la base no
+  deja tener HighLevel y HubSpot encendidos a la vez; para cambiar, desactiva uno.
+  - Se conecta con el token de una app privada de HubSpot (permisos de contactos,
+    negocios, propiedades de contactos y comunicaciones). **Probar conexión** revisa
+    esos permisos, crea en tu HubSpot dos propiedades de contacto, `whatsapp_phone` y
+    `whatsapp_tags`, y es obligatorio antes de que sincronice nada. Cambiar el token
+    por el de otra cuenta suelta los enlaces de contactos y el pipeline de la
+    anterior (hay que elegirlo de nuevo).
+  - Sincroniza el contacto (nombre, email y etiquetas; una etiqueta que quitas aquí
+    se quita en HubSpot) y, cuando una conversación pasa a una persona o se cierra,
+    deja un registro de WhatsApp en la línea de tiempo del contacto, fechado cuando
+    pasó (lo manda el cron `automations`, en menos de un minuto; también cuando el
+    traspaso lo hizo el sistema porque la IA no pudo responder).
+  - Si el token deja de servir (revocado, sin un permiso, sin probar), esos
+    registros **esperan**: al volver a **Probar conexión** con la misma cuenta se
+    envían. Si HubSpot no confirmó si recibió uno, no se reenvía (para no
+    duplicarlo) y queda un evento `crm_sync_failed`.
+  - En el modo setter hay una acción nueva, "Crear negocio en HubSpot", en el
+    pipeline y etapa que elijas.
+  - Los registros ya enviados se borran solos a los 30 días; los que esperan un token
+    arreglado, a los 90.
+- **HighLevel:** editar un contacto en el panel ahora hace **una sola** subida a
+  HighLevel (antes, una por cada etiqueta quitada).
+- **Cron `buffer-flush`:** si una de sus dos fases no puede trabajar (la base no
+  entrega los lotes o los mensajes sin lote), responde **500** con el código de la
+  fase en `net._http_response`, aunque el resto del tick sí haya corrido. Un lote que
+  falla sigue siendo un 200.
+- **Cron `buffer-flush`, timeout:** la plantilla ahora espera la respuesta hasta
+  305 s. Antes no fijaba ninguno y pg_net colgaba a los 5 s: la función seguía
+  corriendo en Vercel, pero cualquier tick de más de 5 s (uno con un turno del agente,
+  o un arranque en frío) quedaba en `net._http_response` sin código, incluido ese 500.
+  **Después de actualizar, vuelve a correr `node scripts/setup.mjs cron-apply`** (o
+  `cron-sql` y pégalo en el SQL Editor): reagenda el job en su lugar, sin duplicarlo.
+
 **Si instalaste desde la antigua rama `provider/kapso`** (Kapso), cámbiate a `main`,
 donde ahora viven los dos proveedores. Cada workspace sigue con el proveedor que
 tenía **activo**: si tenía Kapso (o Kapso y YCloud a la vez), queda en Kapso; si solo
@@ -586,17 +915,27 @@ vercel --prod
 `db-push` marca como revertidas las dos migraciones que solo existían en esa rama
 (`20260731000000/1`; su contenido ya viene en las de `main`) y aplica las nuevas.
 
-**Si además aplicaste ramas de los PRs #8, #9, #11, #12 o #14 de la comunidad**
-(Francisco Velásquez), `db-push` también marca como revertidas sus versiones que
+**Si además aplicaste ramas de los PRs #8, #9, #11, #12, #13, #14, #15, #16 o #17 de la
+comunidad** (Francisco Velásquez), `db-push` también marca como revertidas sus versiones que
 `main` no tiene (la lista está en `scripts/setup.mjs`); si no, `supabase db push` se
 niega a seguir. Eso solo destraba el historial: lo que esas migraciones crearon
 sigue en tu base. Lo que `main` adoptó de ellas vuelve con versiones nuevas que se
 aplican encima (por ejemplo, la tabla `n8n_tools` de #11 se conserva y solo se le
 cambian los permisos). El PR #11 también borraba `custom_webhook` del catálogo de
 tools (sin migrar sus configuraciones); en `main` lo retira `20260930000007`, que
-no hace nada si ya no está.
+no hace nada si ya no está. El motor de automatizaciones de #16 vuelve como
+`20261001000000`, que se aplica encima de lo que #16 creó: conserva sus eventos y
+ejecuciones, apaga las reglas que #16 encendió solo por existir (las que alguien
+encendió con su motor siguen encendidas) y cambia sus referencias por unas que no
+pueden cruzar workspaces. El análisis de temas de #13 vuelve como `20261002000000..02`,
+encima de sus tablas: conserva temas y detecciones, borra las detecciones que #13
+guardó sobre mensajes del agente o del equipo (ahora solo cuenta lo que escribe el
+cliente) y pasa su gasto de LLM a un presupuesto propio. Cal.com (#15) vuelve como
+`20261003000000..03` y HubSpot (#17) como `20261003000004..10`, que se aplican encima
+de lo que esos PRs crearon: un enlace de HubSpot que no sea un id numérico se suelta
+(el siguiente sync lo vuelve a enlazar) y el `db push` lo avisa con un WARNING.
 
-**Si aplicaste ramas de otros PRs de la comunidad (#13, #15, #16 o #17)**, traen
+**Si aplicaste ramas de otros PRs de la comunidad** (fuera de esa lista), traen
 versiones que ni `main` ni esa lista conocen, y `supabase db push` se va a negar a
 seguir. Es a propósito: nada se aplica a ciegas sobre una base con cambios
 desconocidos.

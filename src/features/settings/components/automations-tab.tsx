@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useTransition } from "react";
 import {
   MessageCircle,
   Clock,
+  CalendarClock,
   AlertTriangle,
   Users,
   Star,
@@ -26,7 +27,13 @@ import {
   type ActionType,
 } from "../services/automation-actions";
 import { AutomationRuleForm } from "./automation-rule-form";
+import { AutomationRunsPanel } from "./automation-runs-panel";
+import type {
+  AutomationHealth,
+  RuleHealth,
+} from "@/features/automations/services/rule-health";
 import type { TemplateRow } from "@/features/inbox/services/templates";
+import { RUN_STATUS_LABELS, runReasonLabel } from "@/features/automations/lib/run-labels";
 
 // ── Trigger metadata ──────────────────────────────────────────────────────────
 
@@ -63,6 +70,11 @@ const TRIGGER_META: Record<
     label: "Palabra clave",
     Icon: Search,
     className: "text-muted-foreground bg-muted",
+  },
+  appointment_upcoming: {
+    label: "Antes de una cita",
+    Icon: CalendarClock,
+    className: "text-emerald-400 bg-emerald-400/10",
   },
 };
 
@@ -119,8 +131,42 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 
 // ── Rule card ─────────────────────────────────────────────────────────────────
 
+/** Why the system switched a rule off (automation_rules.paused_reason). */
+const PAUSED_REASON_LABELS: Record<string, string> = {
+  upgrade:
+    "Apagada al actualizar: antes no se ejecutaba. Revísala y actívala si la quieres.",
+  template_paused:
+    "Apagada porque Meta pausó su plantilla. Revisa la plantilla antes de activarla.",
+};
+
+function RuleHealthLine({ health }: { health: RuleHealth | undefined }) {
+  if (!health?.lastStatus) return null;
+  const when = health.lastFinishedAt
+    ? new Date(health.lastFinishedAt).toLocaleString("es-MX", {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    : null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Última ejecución: {RUN_STATUS_LABELS[health.lastStatus] ?? health.lastStatus}
+      {health.lastError && health.lastStatus !== "done"
+        ? ` (${runReasonLabel(health.lastError)})`
+        : ""}
+      {when ? ` · ${when}` : ""}
+      {health.failures24h > 0 && (
+        <span className="text-destructive">
+          {" "}
+          · {health.failures24h} falla{health.failures24h !== 1 ? "s" : ""} en 24 h
+        </span>
+      )}
+    </p>
+  );
+}
+
 interface RuleCardProps {
   rule: AutomationRule;
+  health: RuleHealth | undefined;
   onEdit: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule, enabled: boolean) => void;
@@ -129,6 +175,7 @@ interface RuleCardProps {
 
 function RuleCard({
   rule,
+  health,
   onEdit,
   onDelete,
   onToggle,
@@ -193,6 +240,13 @@ function RuleCard({
                 </span>
               )}
           </div>
+          <RuleHealthLine health={health} />
+          {!rule.enabled && rule.paused_reason && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {PAUSED_REASON_LABELS[rule.paused_reason] ??
+                "El sistema apagó esta automatización. Revísala antes de activarla."}
+            </p>
+          )}
         </div>
 
         {/* Right: controls */}
@@ -234,10 +288,13 @@ function RuleCard({
 
 interface Props {
   workspaceId: string;
+  /** Admins and managers also see the runs panel (the route checks it too). */
+  canViewRuns?: boolean;
 }
 
-export function AutomationsTab({ workspaceId }: Props) {
+export function AutomationsTab({ workspaceId, canViewRuns = false }: Props) {
   const [rules, setRules] = useState<AutomationRule[]>([]);
+  const [health, setHealth] = useState<AutomationHealth | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -264,6 +321,7 @@ export function AutomationsTab({ workspaceId }: Props) {
 
       const rulesJson = (await rulesRes.json()) as {
         data?: AutomationRule[];
+        health?: AutomationHealth | null;
         error?: string;
       };
       const templatesJson = (await templatesRes.json()) as {
@@ -276,6 +334,7 @@ export function AutomationsTab({ workspaceId }: Props) {
       }
 
       setRules(rulesJson.data ?? []);
+      setHealth(rulesJson.health ?? null);
       setTemplates(templatesJson.data ?? []);
     } catch (err) {
       const msg =
@@ -326,7 +385,11 @@ export function AutomationsTab({ workspaceId }: Props) {
     setTogglingId(rule.id);
     // Optimistic update
     setRules((prev) =>
-      prev.map((r) => (r.id === rule.id ? { ...r, enabled } : r)),
+      prev.map((r) =>
+        r.id === rule.id
+          ? { ...r, enabled, paused_reason: enabled ? null : r.paused_reason }
+          : r,
+      ),
     );
 
     const result = await toggleAutomationRule(workspaceId, rule.id, enabled);
@@ -336,7 +399,11 @@ export function AutomationsTab({ workspaceId }: Props) {
       toast.error(result.error);
       // Rollback
       setRules((prev) =>
-        prev.map((r) => (r.id === rule.id ? { ...r, enabled: !enabled } : r)),
+        prev.map((r) =>
+          r.id === rule.id
+            ? { ...r, enabled: !enabled, paused_reason: rule.paused_reason }
+            : r,
+        ),
       );
       return;
     }
@@ -353,6 +420,9 @@ export function AutomationsTab({ workspaceId }: Props) {
   // ── Derived ──────────────────────────────────────────────────────────────────
 
   const enabledCount = rules.filter((r) => r.enabled).length;
+  const pausedByUpgrade = rules.filter(
+    (r) => !r.enabled && r.paused_reason === "upgrade",
+  ).length;
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -379,6 +449,56 @@ export function AutomationsTab({ workspaceId }: Props) {
           </Button>
         </div>
 
+        {!isLoading && !loadError && pausedByUpgrade > 0 && (
+          <div
+            role="status"
+            className="flex gap-3 rounded-lg border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div className="space-y-1">
+              <p className="font-medium">
+                {pausedByUpgrade === 1
+                  ? "Una automatización se apagó al actualizar"
+                  : `${pausedByUpgrade} automatizaciones se apagaron al actualizar`}
+              </p>
+              <p className="text-xs">
+                Antes las automatizaciones solo se guardaban; ahora se ejecutan solas y
+                pueden enviar plantillas de WhatsApp con costo. Revisa cada una y
+                actívala solo si todavía la quieres.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && !loadError && health && (health.dailyCapHit || health.outcomeUnknown24h > 0) && (
+          <div
+            role="status"
+            className="flex gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div className="space-y-1 text-xs">
+              {health.dailyCapHit && (
+                <p>
+                  <strong>Se alcanzó el tope de 300 plantillas automáticas</strong> en
+                  las últimas 24 horas: las siguientes se omitieron.
+                </p>
+              )}
+              {health.outcomeUnknown24h > 0 && (
+                <p>
+                  <strong>
+                    {health.outcomeUnknown24h === 1
+                      ? "Un envío quedó"
+                      : `${health.outcomeUnknown24h} envíos quedaron`}{" "}
+                    con resultado desconocido
+                  </strong>{" "}
+                  en las últimas 24 horas. No se reintentan para no duplicar; revisa en
+                  el inbox si llegaron.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Content — 4 states */}
         {isLoading ? (
           <AutomationsSkeleton />
@@ -402,6 +522,7 @@ export function AutomationsTab({ workspaceId }: Props) {
               <RuleCard
                 key={rule.id}
                 rule={rule}
+                health={health?.rules[rule.id]}
                 onEdit={openEdit}
                 onDelete={handleDelete}
                 onToggle={handleToggle}
@@ -409,6 +530,10 @@ export function AutomationsTab({ workspaceId }: Props) {
               />
             ))}
           </div>
+        )}
+
+        {canViewRuns && !isLoading && !loadError && rules.length > 0 && (
+          <AutomationRunsPanel workspaceId={workspaceId} />
         )}
       </div>
 

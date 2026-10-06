@@ -21,7 +21,13 @@ function nextResponse(): QueueEntry {
   return responseQueue.shift() ?? { data: null, error: null };
 }
 
+const rpcCalls: Array<{ fn: string; args: unknown }> = [];
+let rpcResult: { data: unknown; error: unknown } = { data: true, error: null };
 const fakeClient = {
+  rpc(fn: string, args: unknown) {
+    rpcCalls.push({ fn, args });
+    return Promise.resolve(rpcResult);
+  },
   from(table: string) {
     return {
       select() {
@@ -35,6 +41,10 @@ const fakeClient = {
             lookups.push(eqArgs);
             return Promise.resolve(nextResponse());
           },
+          maybeSingle() {
+            lookups.push(eqArgs);
+            return Promise.resolve(nextResponse());
+          },
         };
         return chain;
       },
@@ -44,6 +54,21 @@ const fakeClient = {
           eq(column: string, value: unknown) {
             eqArgs.push([column, value]);
             return chain;
+          },
+          // The compare-and-swap asks for the updated row back: a queue entry
+          // without `data` is a won race ({ id }); `data: null` a lost one.
+          select() {
+            return {
+              maybeSingle() {
+                updates.push({ table, row, eqArgs });
+                const r = nextResponse();
+                if (r.error) return Promise.resolve({ data: null, error: r.error });
+                return Promise.resolve({
+                  data: "data" in r ? r.data : { id: "conv_1" },
+                  error: null,
+                });
+              },
+            };
           },
           then(resolve: (v: QueueEntry) => void) {
             updates.push({ table, row, eqArgs });
@@ -99,7 +124,10 @@ mock.module("./handoff-notifier.ts", {
 
 const { decide, applyTransition } = await import("./decision-engine.ts");
 
-const FOUND = { data: { state: "ai_active", workspace_id: "ws_1" }, error: null };
+const FOUND = {
+  data: { state: "ai_active", workspace_id: "ws_1", state_version: 3 },
+  error: null,
+};
 
 function reset(queue: QueueEntry[] = [FOUND, { error: null }, { error: null }]) {
   responseQueue = queue;
@@ -112,6 +140,8 @@ function reset(queue: QueueEntry[] = [FOUND, { error: null }, { error: null }]) 
   reserveCalls = 0;
   enabledTools = [];
   enabledToolsError = null;
+  rpcCalls.length = 0;
+  rpcResult = { data: true, error: null };
 }
 
 const DECIDE = {
@@ -217,6 +247,8 @@ test("scopes both the lookup and the update to workspaceId when it is given", as
   assert.ok(update, "conversations update must run");
   assert.deepEqual(update.eqArgs, [
     ["id", "conv_1"],
+    ["state", "ai_active"],
+    ["state_version", 3],
     ["workspace_id", "ws_1"],
   ]);
   // The state_change event is logged under the conversation's workspace.
@@ -278,4 +310,76 @@ test("throws when the DB update fails", async () => {
     () => applyTransition("conv_1", "paused"),
     /failed to apply transition: db down/,
   );
+});
+
+// ── applyTransition(): compare-and-swap ────────────────────────────────
+
+test("lost race to the same target: returns without a second event or notification", async () => {
+  reset([FOUND, { data: null }, { data: { state: "handoff_pending" }, error: null }]);
+  await applyTransition("conv_1", "handoff_pending", { trigger: "keyword" });
+  assert.equal(inserts.length, 0, "no second state_change event");
+  assert.equal(notifyCalls.length, 0, "no second notification");
+});
+
+test("lost race where the state moved elsewhere: throws state_mismatch", async () => {
+  reset([FOUND, { data: null }, { data: { state: "closed" }, error: null }]);
+  await assert.rejects(
+    () => applyTransition("conv_1", "handoff_pending", { trigger: "keyword" }),
+    (err: unknown) =>
+      err instanceof Error &&
+      err.name === "TransitionError" &&
+      (err as { code?: string }).code === "state_mismatch",
+  );
+});
+
+test("lost race with an assignment: the other operator won, so this one is told", async () => {
+  reset([FOUND, { data: null }, { data: { state: "human_active" }, error: null }]);
+  await assert.rejects(
+    () => applyTransition("conv_1", "human_active", { userId: "user_2" }),
+    /state moved under us/,
+  );
+});
+
+test("before the migration (no state_version column) it compares on state only", async () => {
+  reset([
+    { data: null, error: { code: "42703", message: "column conversations.state_version does not exist" } },
+    { data: { state: "ai_active", workspace_id: "ws_1" }, error: null },
+    {},
+    { error: null },
+  ]);
+  await applyTransition("conv_1", "paused");
+  const update = updates.find((u) => u.table === "conversations");
+  assert.ok(update);
+  assert.deepEqual(update.eqArgs, [
+    ["id", "conv_1"],
+    ["state", "ai_active"],
+  ]);
+});
+
+test("si el INSERT del evento state_change falla, queda registrado server-side", async () => {
+  reset();
+  responseQueue = [
+    { data: { state: "ai_active", workspace_id: "ws_1" }, error: null },
+    { error: null }, // UPDATE
+    { error: { code: "57014", message: "connection string leaked" } }, // INSERT: falla
+  ];
+  const logged: unknown[][] = [];
+  const original = console.error;
+  console.error = (...a: unknown[]) => logged.push(a);
+  try {
+    await applyTransition("conv_1", "handoff_pending");
+  } finally {
+    console.error = original;
+  }
+  assert.ok(logged.some((a) => String(a[0]).includes("state_change insert failed")));
+  // Y no se filtra el mensaje crudo del error.
+  assert.ok(logged.every((a) => !JSON.stringify(a).includes("connection string")));
+});
+
+// ── The HubSpot timeline queue is fed by a trigger, not from here ───────────
+
+test("a transition never calls the HubSpot queue itself (a trigger does, in the same UPDATE)", async () => {
+  reset();
+  await applyTransition("conv_1", "handoff_pending", { trigger: "keyword" });
+  assert.deepEqual(rpcCalls, []);
 });
