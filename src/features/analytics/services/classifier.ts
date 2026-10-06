@@ -202,7 +202,7 @@ export async function classifyConversation(params: {
       apiKey: params.key.key,
       headers: {
         "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-        "X-Title": "Agente WhatsApp",
+        "X-Title": "prompteafacil agentes",
       },
     });
 
