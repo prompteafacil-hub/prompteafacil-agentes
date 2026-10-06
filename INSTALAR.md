@@ -2,29 +2,37 @@
 
 ## Para ti (miembro de la comunidad prompteafacil)
 
-Arrastraste este archivo al chat de tu agente — **Claude Code** (recomendado),
-Codex, o cualquier agente que pueda correr comandos en tu terminal. Solo escribe:
+Todo se hace desde la **app de Claude** (pestaña **Code**), en Mac o en Windows. No
+necesitas VS Code ni cuenta de GitHub.
 
-> **instálalo**
+1. Abre la app de Claude y entra a la pestaña **Code**.
+2. Elige una carpeta donde guardar tus proyectos (por ejemplo, `Documentos/proyectos`).
+3. Escribe este mensaje y envíalo:
 
-Y el agente hace todo: configura tu Supabase, despliega a tu Vercel, crea tu
-super admin y deja el cron corriendo. Tarda ~15 minutos.
+> Clona https://github.com/prompteafacil-hub/prompteafacil-agentes en esta carpeta,
+> entra al proyecto, lee INSTALAR.md e instálalo.
 
-### Lo que necesitas tener listo (cuentas gratis)
+Claude hace todo: configura tu Supabase, publica la app en tu Vercel, crea tu
+usuario administrador y deja las tareas automáticas corriendo. Tarda unos 15 minutos.
+Solo te va a pedir tus llaves y que inicies sesión en Supabase y en Vercel.
+
+### Lo que necesitas tener listo
 
 | Cuenta         | Para qué                       | Plan           |
 | -------------- | ------------------------------ | -------------- |
+| **Claude**     | La app que instala todo        | Pro o superior |
 | **Supabase**   | Base de datos + Auth + Storage | Free sirve     |
 | **Vercel**     | Hospedaje de la app            | Hobby (gratis) |
 | **YCloud** o **Kapso** | Número de WhatsApp (proveedor; Kapso si estás en EE. UU.) | Según su plan  |
 | **OpenRouter** | El modelo de IA (LLM)          | Pago por uso   |
 
-El agente instala lo demás (Node, los CLIs de Supabase y Vercel). Cuando termine,
-te da tu URL de producción: entras con tu super admin al panel de agencia y
+Claude instala lo demás (Node y los CLIs de Supabase y Vercel). Cuando termine, te
+da tu URL de producción: entras con tu usuario administrador al panel de agencia y
 creas tu primer workspace de cliente.
 
-> Si todavía no tienes un agente: instala Claude Code (claude.ai/download), ábrelo
-> en la carpeta de este proyecto, arrastra este archivo al chat y escribe "instálalo".
+> **Antes de conectar un número que ya usas con clientes**, activa el
+> [modo prueba](#modo-prueba-la-ia-solo-responde-a-tus-números): la IA responde
+> solo a los números que tú indiques.
 
 ---
 
@@ -68,9 +76,23 @@ node -v   # necesita v20 o superior
 node scripts/setup.mjs doctor
 ```
 
-Si falta el CLI de **Supabase**: `brew install supabase/tap/supabase`
-(o ve https://supabase.com/docs/guides/cli).
+Si falta el CLI de **Supabase**:
+
+- **Mac:** `brew install supabase/tap/supabase`. Si no hay Homebrew, instálalo
+  primero (https://brew.sh) o usa otro método de https://supabase.com/docs/guides/cli.
+- **Windows:** `scoop bucket add supabase https://github.com/supabase/scoop-bucket.git`
+  y luego `scoop install supabase` (instala Scoop antes si falta: https://scoop.sh).
+
 Si falta el CLI de **Vercel**: `npm i -g vercel`.
+
+Si falta **Node** o **git**, instálalos antes de seguir (https://nodejs.org,
+https://git-scm.com) y pídele al usuario que reinicie la app de Claude para que
+los detecte.
+
+**Sobre los `login` (pasos 5 y 6):** `supabase login` y `vercel login` abren el
+navegador y a veces piden pegar un código. Si en tu entorno el comando se queda
+esperando, pídele al usuario que lo corra en el **panel Terminal** de la app de
+Claude y que te avise cuando termine.
 
 **3. Instala dependencias.**
 
@@ -213,6 +235,23 @@ from cron.job_run_details
 where jobid = (select jobid from cron.job where jobname = 'buffer-flush')
 order by start_time desc limit 5;
 ```
+
+### Modo prueba: la IA solo responde a tus números
+
+Úsalo cuando conectas un número que ya recibe mensajes reales (el del negocio) y
+quieres probar el agente sin que les conteste a tus clientes.
+
+```bash
+vercel env add AI_TEST_NUMBERS production   # pega tus números separados por coma, p. ej. +5491155550000,+5215512345678
+vercel --prod                               # redeploy para que tome el cambio
+```
+
+- Con la variable definida, la IA responde **solo** a esos números. Los mensajes de
+  todos los demás entran al inbox igual, sin respuesta automática.
+- Para salir del modo prueba: `vercel env rm AI_TEST_NUMBERS production` y
+  `vercel --prod`.
+- El número se compara por sus últimos 10 dígitos, así que no importa si lo escribes
+  con o sin el 9 de Argentina o el 1 de México.
 
 **13. Más clientes.** Repite los pasos 10–11 por cada cliente nuevo: un workspace +
 su propia integración de WhatsApp (cada uno puede usar YCloud o Kapso).

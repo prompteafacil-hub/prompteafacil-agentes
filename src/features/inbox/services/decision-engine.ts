@@ -13,6 +13,7 @@ import { isMissingColumnError, reportMissingFunctionOnce } from "@/shared/lib/db
 import { reserveLlmTurn } from "./cost-tracker";
 import { getEnabledTools } from "@/features/tools/services/tool-configs";
 import type { Tool } from "@/features/tools/core/tool";
+import { isAllowedInTestMode, parseTestNumbers } from "./test-mode";
 
 // The class lives in the pure state-machine module; callers of applyTransition
 // (the automation executor among them) import both from here.
@@ -76,6 +77,22 @@ export async function decide(opts: {
   // 2. Check if AI should respond in current state
   if (!aiShouldRespond(currentState)) {
     return { decision: "abstain", reason: `state:${currentState}` };
+  }
+
+  // 2b. Modo prueba (prompteafacil): con AI_TEST_NUMBERS definido, la IA solo
+  // responde a esos números. El mensaje ya quedó guardado en el inbox.
+  const testNumbers = parseTestNumbers(process.env.AI_TEST_NUMBERS);
+  if (testNumbers.length > 0) {
+    const { data: contact } = await supabase
+      .from("contacts")
+      .select("phone")
+      .eq("id", contactId)
+      .eq("workspace_id", workspaceId)
+      .single();
+    const phone = (contact as { phone?: string } | null)?.phone ?? null;
+    if (!isAllowedInTestMode(phone, testNumbers)) {
+      return { decision: "abstain", reason: "test_mode" };
+    }
   }
 
   // 3. Detect handoff trigger in message text

@@ -4,9 +4,18 @@ Plataforma **multi-tenant** de inbox de WhatsApp con un agente de IA operable po
 humano: inbox tipo WhatsApp Web, CRM, motor de agente con handoff, agendamiento y
 cumplimiento de la ventana de 24h de Meta. Cada workspace es un cliente.
 
-## Instalar (one-click con tu agente)
+## Instalar (desde la app de Claude)
 
-Clona el repo, ábrelo en Claude Code y deja que el agente lo instale:
+Abre la app de Claude, entra a la pestaña **Code**, elige una carpeta y envía:
+
+> Clona https://github.com/prompteafacil-hub/prompteafacil-agentes en esta carpeta,
+> entra al proyecto, lee INSTALAR.md e instálalo.
+
+Claude configura tu Supabase, publica en tu Vercel, crea tu usuario administrador y
+deja las tareas automáticas corriendo en unos 15 minutos. Solo te pedirá tus llaves
+y los inicios de sesión de Supabase y Vercel.
+
+¿Prefieres la terminal?
 
 ```bash
 git clone https://github.com/prompteafacil-hub/prompteafacil-agentes.git
@@ -14,20 +23,13 @@ cd prompteafacil-agentes
 claude "lee INSTALAR.md e instálalo"
 ```
 
-(O arrastra **[`INSTALAR.md`](INSTALAR.md)** al chat de Claude Code y escribe
-**"instálalo"**.)
-
-El agente configura tu Supabase, despliega a tu Vercel, crea tu super admin y deja
-el cron corriendo en ~15 minutos. Solo te pedirá tus keys y los logins de
-Supabase/Vercel.
-
 > Los comandos del instalador (`npm`, `supabase`, `vercel`, los scripts de
 > `scripts/`) ya vienen **pre-aprobados** en
 > [`.claude/settings.json`](.claude/settings.json), así que la instalación fluye sin
-> clics de permiso. Los únicos pasos que pueden pedirte confirmación son los que
-> cargan tus secrets (keys / contraseñas) — apruébalos con confianza.
+> clics de permiso.
 
-> Sin git: usa **"Use this template"** en GitHub, o descarga el ZIP del repo.
+Para **actualizar** una instalación existente, abre el proyecto en Claude y escribe:
+*"lee INSTALAR.md y actualízalo"*.
 
 ## Qué incluye
 
