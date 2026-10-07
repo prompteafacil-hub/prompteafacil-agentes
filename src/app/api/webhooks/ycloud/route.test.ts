@@ -25,8 +25,13 @@ const unused = async () => {
   throw new Error("not expected in this test");
 };
 let inboundCalls = 0;
+const echoCalls: Array<{ workspaceId: string; echo: Record<string, unknown> }> = [];
 mock.module("@/features/inbox/services/normalizer.ts", {
   exports: {
+    processOutboundEcho: async (workspaceId: string, echo: Record<string, unknown>) => {
+      echoCalls.push({ workspaceId, echo });
+      return { conversationId: "conv_1", inserted: true, aiDisabled: true };
+    },
     processInbound: async () => {
       inboundCalls++;
       return {
@@ -252,4 +257,56 @@ test("bare digits with the workspace's code are enforced; a + number never needs
   await inbound("+15550000000", { type: "reaction", reaction: { emoji: "👍" } });
   assert.deepEqual(countryCodeCalls, [], "no business_info read on the common path");
   await settled();
+});
+
+// Coexistence (prompteafacil): replies sent from the WhatsApp Business App.
+function echoFrom(from: string, message: Record<string, unknown>) {
+  return signedPost({
+    type: "whatsapp.smb.message.echoes",
+    whatsappMessage: {
+      id: "yc_echo_1",
+      wamid: "wamid.echo.1",
+      status: "sent",
+      from,
+      to: "+5215512345678",
+      ...message,
+    },
+  });
+}
+
+test("a reply sent from the phone is recorded and hands the conversation to the human", async () => {
+  const original = ROW.config;
+  ROW.config = { phone_number: "+15551234567" };
+  echoCalls.length = 0;
+  inboundCalls = 0;
+  statusCalls.length = 0;
+  try {
+    const res = await echoFrom("+15551234567", { type: "text", text: { body: "Te llamo en 5" } });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.equal(json.echo, true);
+    assert.equal(json.aiDisabled, true);
+    assert.equal(echoCalls.length, 1);
+    assert.equal(echoCalls[0].workspaceId, "ws_1");
+    assert.equal(echoCalls[0].echo.to, "+5215512345678");
+    assert.equal(echoCalls[0].echo.text, "Te llamo en 5");
+    assert.equal(inboundCalls, 0, "an echo is not an inbound message");
+    assert.equal(statusCalls.length, 0, "nor a status update");
+  } finally {
+    ROW.config = original;
+  }
+});
+
+test("an echo from another business number is ignored", async () => {
+  const original = ROW.config;
+  ROW.config = { phone_number: "+15551234567" };
+  echoCalls.length = 0;
+  try {
+    const res = await echoFrom("+15559999999", { type: "text", text: { body: "hola" } });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).ignored, "echo_other_number");
+    assert.equal(echoCalls.length, 0);
+  } finally {
+    ROW.config = original;
+  }
 });

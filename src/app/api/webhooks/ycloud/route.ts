@@ -3,8 +3,13 @@ import { createClient as createSbClient } from "@supabase/supabase-js";
 import {
   verifyYCloudSignature,
   parseInbound,
+  parseOutboundEcho,
+  echoBusinessPhone,
 } from "@/features/inbox/services/ycloud-webhook-handler";
-import { processInbound } from "@/features/inbox/services/normalizer";
+import {
+  processInbound,
+  processOutboundEcho,
+} from "@/features/inbox/services/normalizer";
 import { checkRateLimits } from "@/features/inbox/services/cost-tracker";
 import {
   hasTimeToClaim,
@@ -151,6 +156,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // CRITICAL: verify the signature BEFORE acting on ANY event (status or inbound).
     if (!verifyYCloudSignature(rawBody, sigHeader, webhookSecret)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Coexistence (prompteafacil): a human answered from the WhatsApp Business
+    // App on their phone. Record the reply and hand the conversation to them so
+    // the agent does not answer on top of the person. Only reached after
+    // signature verification, and only for this workspace's own number.
+    const echo = parseOutboundEcho(body);
+    if (echo) {
+      const configured = phoneString(ws.config?.phone_number);
+      const sender = phoneString(echoBusinessPhone(body));
+      if (configured && sender && !samePhone(configured, sender)) {
+        return NextResponse.json({ received: true, ignored: "echo_other_number" });
+      }
+      const result = await processOutboundEcho(ws.workspace_id, echo);
+      return NextResponse.json({
+        received: true,
+        echo: true,
+        recorded: result.inserted,
+        aiDisabled: result.aiDisabled,
+      });
     }
 
     // WH-02: monotonic status updates — only reached after signature verification.

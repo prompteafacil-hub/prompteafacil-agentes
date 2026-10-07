@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { inboundContentText } from "./inbound-content";
+import type { OutboundEcho } from "./kapso-webhook-handler";
 
 /**
  * Verifies a YCloud webhook signature.
@@ -218,4 +219,90 @@ export function parseInbound(body: unknown): NormalizedInbound | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Coexistence (prompteafacil): parses a message the business sent from the
+ * WhatsApp Business App on a phone. YCloud delivers those as
+ * `whatsapp.smb.message.echoes`, with the message under `whatsappMessage`
+ * (`from` = the business number, `to` = the customer).
+ *
+ * Same contract as the Kapso parser: the result feeds processOutboundEcho(),
+ * which records the human's reply and hands the conversation over to them so
+ * the agent stops answering on top of the person.
+ *
+ * Returns null for any other event or a malformed payload.
+ */
+export function parseOutboundEcho(body: unknown): OutboundEcho | null {
+  try {
+    if (typeof body !== "object" || body === null) return null;
+    const event = body as Record<string, unknown>;
+    if (event.type !== "whatsapp.smb.message.echoes") return null;
+
+    const wm = event.whatsappMessage;
+    if (typeof wm !== "object" || wm === null) return null;
+    const msg = wm as Record<string, unknown>;
+
+    // The wamid is the id WhatsApp knows the message by; YCloud's own id is the
+    // fallback so a retried delivery still dedups.
+    const wamid =
+      typeof msg.wamid === "string" && msg.wamid
+        ? msg.wamid
+        : typeof msg.id === "string" && msg.id
+          ? msg.id
+          : null;
+    if (!wamid) return null;
+
+    const to = typeof msg.to === "string" && msg.to ? msg.to : null;
+    if (!to) return null;
+
+    const msgType = typeof msg.type === "string" ? msg.type : "unknown";
+
+    let text: string | null = null;
+    if (msgType === "text") {
+      const textObj = msg.text;
+      if (typeof textObj === "object" && textObj !== null) {
+        const b = (textObj as Record<string, unknown>).body;
+        text = typeof b === "string" ? b : null;
+      }
+    } else {
+      const mediaObj = msg[msgType];
+      const caption =
+        typeof mediaObj === "object" && mediaObj !== null
+          ? (mediaObj as Record<string, unknown>).caption
+          : null;
+      text =
+        typeof caption === "string" && caption.trim() ? caption : "[Multimedia]";
+    }
+    if (text === null) text = "[Multimedia]";
+
+    const sent =
+      typeof msg.sendTime === "string"
+        ? msg.sendTime
+        : typeof msg.createTime === "string"
+          ? msg.createTime
+          : typeof event.createTime === "string"
+            ? event.createTime
+            : new Date().toISOString();
+
+    return {
+      to,
+      wamid,
+      type: toMessageType(msgType),
+      text,
+      createTime: sent,
+      phoneNumberId: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The business number an echo was sent from, for the destination check. */
+export function echoBusinessPhone(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const wm = (body as Record<string, unknown>).whatsappMessage;
+  if (typeof wm !== "object" || wm === null) return null;
+  const from = (wm as Record<string, unknown>).from;
+  return typeof from === "string" && from ? from : null;
 }

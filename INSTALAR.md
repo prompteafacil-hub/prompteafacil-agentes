@@ -213,6 +213,14 @@ Number ID (Kapso): el botón de guardar te dice qué falta.
 Guarda, copia el **Webhook URL** que muestra la app (ya trae el `wsid` y la ruta del
 proveedor elegido) → pégalo en los webhooks del proveedor y conecta el número.
 
+En **YCloud**, al crear el webhook (**Developers → Webhooks**) suscribe estos eventos:
+`whatsapp.inbound_message.received` (trae los mensajes), `whatsapp.message.updated`
+(mueve el estado) y, si el número está en **coexistence**,
+`whatsapp.smb.message.echoes`: por ahí llega la respuesta que una persona escribe
+desde la app de WhatsApp Business en el celular. Con ese evento, la respuesta
+aparece en el inbox y la IA deja de contestar en esa conversación hasta que la
+reactives.
+
 En **Kapso**, al crear el webhook con el mismo signing secret, suscribe los cinco
 eventos: `whatsapp.message.received` (trae los mensajes) y `sent`, `delivered`,
 `read` y `failed` (mueven el estado; con coexistence, `sent` es además por donde
