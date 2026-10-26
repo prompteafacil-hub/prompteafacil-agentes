@@ -66,7 +66,7 @@ YCloud.
 | Identidad del emisor | `phone_number` (E.164) | `phone_number_id` de Meta |
 | Plantillas | WABA resuelto desde el número | `waba_id` configurado (se autocompleta) |
 | Firma del webhook | con timestamp, ventana anti-replay de 300 s | HMAC-SHA256 sin timestamp |
-| Coexistence (responder desde la app en el celular) | soportado (suscribe `whatsapp.smb.message.echoes`) | soportado |
+| Coexistence (responder desde la app en el celular) | soportado (suscribe `whatsapp.smb.message.echoes` y `whatsapp.smb.message.created`) | soportado |
 | Prueba de conexión | `GET /balance` | listado de números del proyecto |
 | Webhook | `/api/webhooks/ycloud?wsid=…` | `/api/webhooks/kapso?wsid=…` |
 

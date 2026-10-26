@@ -237,7 +237,13 @@ export function parseOutboundEcho(body: unknown): OutboundEcho | null {
   try {
     if (typeof body !== "object" || body === null) return null;
     const event = body as Record<string, unknown>;
-    if (event.type !== "whatsapp.smb.message.echoes") return null;
+    // YCloud documents two Business App events with the same message shape
+    // (docs, 2026-10-09). If both arrive for one message, the wamid dedups it.
+    if (
+      event.type !== "whatsapp.smb.message.echoes" &&
+      event.type !== "whatsapp.smb.message.created"
+    )
+      return null;
 
     const wm = event.whatsappMessage;
     if (typeof wm !== "object" || wm === null) return null;

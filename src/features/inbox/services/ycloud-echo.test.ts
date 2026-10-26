@@ -87,3 +87,10 @@ test("echoBusinessPhone reads the sender for the destination check", () => {
   );
   assert.equal(echoBusinessPhone({}), null);
 });
+
+test("whatsapp.smb.message.created is read the same way", () => {
+  const event = echoEvent({ type: "text", text: { body: "Your order is ready" } });
+  const echo = parseOutboundEcho({ ...event, type: "whatsapp.smb.message.created" });
+  assert.equal(echo?.text, "Your order is ready");
+  assert.equal(echo?.to, "+5491155550000");
+});
