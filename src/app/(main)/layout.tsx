@@ -91,12 +91,14 @@ export default async function MainLayout({
           )}
         </div>
 
-        {/* Right: agency link (super admin only) + dashboard + settings + logout */}
+        {/* Right: agency link (super admin only) + dashboard + settings + logout.
+            Below md the section links live in the bottom nav; here they would
+            overflow onto the brand. */}
         <div className="flex items-center gap-1 shrink-0">
           <ThemeToggle />
 
           {isSuperAdmin && (
-            <Link href="/workspaces">
+            <Link href="/workspaces" className="hidden md:inline-flex">
               <Button
                 variant="ghost"
                 size="sm"
@@ -108,7 +110,7 @@ export default async function MainLayout({
             </Link>
           )}
 
-          <Link href="/inbox">
+          <Link href="/inbox" className="hidden md:inline-flex">
             <Button
               variant="ghost"
               size="sm"
@@ -119,7 +121,7 @@ export default async function MainLayout({
             </Button>
           </Link>
 
-          <Link href="/contactos">
+          <Link href="/contactos" className="hidden md:inline-flex">
             <Button
               variant="ghost"
               size="sm"
@@ -130,7 +132,7 @@ export default async function MainLayout({
             </Button>
           </Link>
 
-          <Link href="/dashboard">
+          <Link href="/dashboard" className="hidden md:inline-flex">
             <Button
               variant="ghost"
               size="sm"
@@ -141,7 +143,7 @@ export default async function MainLayout({
             </Button>
           </Link>
 
-          <Link href="/analisis">
+          <Link href="/analisis" className="hidden md:inline-flex">
             <Button
               variant="ghost"
               size="sm"
@@ -152,7 +154,7 @@ export default async function MainLayout({
             </Button>
           </Link>
 
-          <Link href="/settings">
+          <Link href="/settings" className="hidden md:inline-flex">
             <Button
               variant="ghost"
               size="sm"

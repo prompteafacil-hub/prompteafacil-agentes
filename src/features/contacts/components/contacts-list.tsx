@@ -209,7 +209,7 @@ export function ContactsList({
                 const name = contactDisplayName(c);
                 return (
                   <TableRow key={c.id}>
-                    <TableCell className="max-w-[14rem]">
+                    <TableCell className="h-14 max-w-[14rem]">
                       <p className="truncate font-medium text-foreground" title={name}>
                         {name}
                       </p>
