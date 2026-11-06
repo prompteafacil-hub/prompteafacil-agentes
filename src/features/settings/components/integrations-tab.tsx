@@ -1613,7 +1613,7 @@ function CalDotComSection({
             disabled={!canEdit}
           />
           <p className="text-xs text-muted-foreground">
-            Cal.com → Settings → Security → API Keys.
+            Cal.com → My Settings → Developer → API Keys.
           </p>
         </div>
 
