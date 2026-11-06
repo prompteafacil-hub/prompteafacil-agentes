@@ -37,7 +37,10 @@ Para **actualizar** una instalación existente, abre el proyecto en Claude y esc
   como un solo turno coherente).
 - **Motor de agente** con state machine + handoff humano, prompting personalizable
   y tools activables (incluye modo setter y agendamiento).
-- **CRM** con sincronización opcional a HighLevel (por workspace).
+- **CRM** con página **Contactos**: tablero por etapa con arrastrar y soltar, lista
+  con búsqueda, filtro por etiquetas y exportación a CSV, y etapas que avanzan
+  solas (Interesado al responder, Calificado al agendar). Sincronización opcional
+  a HighLevel o HubSpot (por workspace).
 - **Knowledge Base** con búsqueda semántica (pgvector).
 - **Templates** y manejo de la ventana de 24h de Meta.
 - **Multi-tenant** con roles, RLS por workspace y super admin.

@@ -387,13 +387,42 @@ su propia integración de WhatsApp (cada uno puede usar YCloud o Kapso).
 
 ## Actualizar a una versión nueva
 
+Cuando el usuario diga *"Lee INSTALAR.md y actualízalo a la última versión"*, haz
+esto en orden, confirmando cada paso. Antes de empezar, revisa con `git status` que
+no haya cambios locales sin guardar en `src/` o `supabase/`; si los hay, detente y
+pregunta.
+
 ```bash
-git pull                 # o reemplaza los archivos del proyecto
-npm install
+git pull                 # trae la versión nueva (o reemplaza los archivos del proyecto)
+npm install              # dependencias nuevas, si las hay
 supabase login           # solo si esta máquina no tiene sesión del CLI
 SUPABASE_DB_PASSWORD='tu-contraseña-de-la-base' node scripts/setup.mjs db-push   # SIEMPRE antes del deploy
 vercel --prod            # redeploy
 ```
+
+- `db-push` aplica **solo las migraciones nuevas** (las que tu base todavía no
+  tiene) y funciona con cualquier versión del CLI de Supabase (con la v3 agrega
+  `--remote` solo). Si no hay migraciones nuevas, no cambia nada.
+- Si la contraseña de la base no está a mano, se recupera en Supabase → **Project
+  Settings → Database → Reset database password** (cámbiala solo si nadie más la usa).
+- Las variables de Vercel no se tocan al actualizar, salvo que las notas de la
+  versión de abajo digan lo contrario.
+- Al terminar, abre la URL de producción y confirma que entras y que el inbox carga.
+
+**Novedades de noviembre de 2026 (CRM y modo prueba por workspace):**
+
+- Nueva página **Contactos** (menú superior): tablero por etapa (Nuevo, Interesado,
+  Calificado, Cliente, Perdido) donde se arrastra un contacto para cambiarle la
+  etapa, y una vista de lista con búsqueda, filtro por etiquetas y **Exportar CSV**.
+  Necesita la migración `20261106000000_crm_contacts_board` (la aplica `db-push`):
+  si despliegas antes, la página te avisa que falta.
+- La etapa avanza sola: a **Interesado** cuando el contacto responde a un mensaje
+  tuyo, y a **Calificado** cuando el agente agenda una cita en Cal.com. Nunca
+  retrocede ni saca a nadie de Cliente o Perdido.
+- En la configuración de cada agente, bajo **Auto-etiquetado**, puedes poner
+  **Etiquetas permitidas** (por ejemplo `aprender, servicio`): la IA solo usará esas.
+- **Modo prueba por workspace** en Configuración → Integraciones. `AI_TEST_NUMBERS`
+  sigue funcionando para los workspaces sin lista propia.
 
 Corre las migraciones en un momento de poco tráfico: algunas reconstruyen
 restricciones de tablas grandes (mensajes) y las bloquean unos segundos.

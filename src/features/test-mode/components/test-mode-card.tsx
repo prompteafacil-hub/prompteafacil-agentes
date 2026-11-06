@@ -128,6 +128,7 @@ export function TestModeCard({ workspaceId, canEdit, initial }: Props) {
           </p>
           <Button
             size="sm"
+            variant="outline"
             onClick={onSave}
             disabled={!canEdit || saving}
             aria-busy={saving}
