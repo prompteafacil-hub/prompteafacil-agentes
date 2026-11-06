@@ -11,6 +11,11 @@ export interface AgentConfig {
   maxTokens?: number;
   /** Opt-in v1.5 features. */
   autoTag?: boolean;
+  /**
+   * Etiquetas entre las que elige el auto-etiquetado. Vacío o ausente =
+   * etiquetas libres (comportamiento original).
+   */
+  allowedTags?: string[];
   summarize?: boolean;
   /** Verbosity of replies; "balanced" when unset. */
   responseStyle?: ResponseStyle;

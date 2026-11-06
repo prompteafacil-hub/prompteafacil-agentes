@@ -1,6 +1,11 @@
 import { createClient as svcClient } from "@supabase/supabase-js";
 import { generateChatReply } from "@/features/inbox/services/openrouter";
 import type { AgentConfig } from "@/features/agents/types";
+import {
+  parseAllowedTags,
+  selectAutoTags,
+  tagsPromptField,
+} from "@/features/agents/lib/allowed-tags";
 
 // v1.5 backlog: opt-in AI auto-tagging + conversation summary. Runs
 // fire-and-forget after a reply is dispatched, only when the active agent has
@@ -57,11 +62,11 @@ export async function maybeAutoProcess(opts: {
       .map((m) => `${m.direction === "in" ? "Cliente" : "Agente"}: ${m.body}`)
       .join("\n");
 
+    // Empty list = free-form tags, as before. With a list, the model picks
+    // from it and selectAutoTags drops anything else it returns.
+    const allowedTags = parseAllowedTags(config.allowedTags);
     const fields: string[] = [];
-    if (config.autoTag)
-      fields.push(
-        '- "tags": array de 1 a 3 etiquetas cortas en minúsculas (ej: ["interesado","precio"]).',
-      );
+    if (config.autoTag) fields.push(tagsPromptField(allowedTags));
     if (config.summarize)
       fields.push('- "summary": resumen de la conversación en una sola frase.');
 
@@ -81,11 +86,7 @@ export async function maybeAutoProcess(opts: {
     if (!parsed) return;
 
     if (config.autoTag && Array.isArray(parsed.tags)) {
-      const newTags = parsed.tags
-        .filter((t): t is string => typeof t === "string")
-        .map((t) => t.toLowerCase().trim())
-        .filter(Boolean)
-        .slice(0, 3);
+      const newTags = selectAutoTags(parsed.tags, allowedTags);
       if (newTags.length > 0) {
         // One atomic append (the RPC merges inside its own UPDATE, with the
         // row locked): the read-modify-write that was here dropped tags an

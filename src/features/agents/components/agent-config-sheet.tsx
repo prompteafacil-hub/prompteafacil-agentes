@@ -23,6 +23,7 @@ import { GuidedPromptEditor } from "./guided-prompt-editor";
 import { TestChatPanel } from "./test-chat-panel";
 import { SetterAdvancedConfig } from "./setter-advanced-config";
 import { AGENT_TYPE_META } from "@/features/agents/lib/agent-meta";
+import { parseAllowedTags } from "@/features/agents/lib/allowed-tags";
 import { cn } from "@/lib/utils";
 import type { AgentDto } from "@/features/agents/types";
 import type { ResponseStyle } from "@/features/inbox/services/prompt-builder";
@@ -55,6 +56,9 @@ export function AgentConfigSheet({
   const [avatarKey, setAvatarKey] = useState(agent.avatarKey);
   const [model, setModel] = useState<string | null>(agent.model);
   const [autoTag, setAutoTag] = useState(Boolean(agent.config.autoTag));
+  const [allowedTagsText, setAllowedTagsText] = useState(
+    parseAllowedTags(agent.config.allowedTags).join(", "),
+  );
   const [summarize, setSummarize] = useState(Boolean(agent.config.summarize));
   const [responseStyle, setResponseStyle] = useState<ResponseStyle>(
     agent.config.responseStyle ?? "balanced",
@@ -83,6 +87,7 @@ export function AgentConfigSheet({
           config: {
             ...agent.config,
             autoTag,
+            allowedTags: parseAllowedTags(allowedTagsText),
             summarize,
             responseStyle,
             sleepOnManualMessage: sleepOnManual,
@@ -171,6 +176,27 @@ export function AgentConfigSheet({
                   aria-label="Auto-etiquetado"
                 />
               </div>
+              {autoTag && (
+                <div className="space-y-1.5 border-l-2 border-border/60 pl-3">
+                  <Label htmlFor="agent-allowed-tags" className="text-xs">
+                    Etiquetas permitidas (opcional)
+                  </Label>
+                  <Input
+                    id="agent-allowed-tags"
+                    value={allowedTagsText}
+                    onChange={(e) => setAllowedTagsText(e.target.value)}
+                    placeholder="aprender, servicio"
+                    aria-describedby="agent-allowed-tags-hint"
+                  />
+                  <p
+                    id="agent-allowed-tags-hint"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Separadas por coma. Si las escribes, la IA solo usa estas.
+                    Vacío: elige etiquetas libres.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-foreground">
