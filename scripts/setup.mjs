@@ -21,6 +21,7 @@ import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseCliMajor, remoteTargetFlags, supabaseRemoteCommand } from "./lib/supabase-cli.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = resolve(ROOT, ".env.local");
@@ -129,6 +130,29 @@ function hasCli(name) {
 
 function ensureCli(name, hint) {
   if (!hasCli(name)) fail(`Falta el CLI "${name}". Instálalo: ${hint}`);
+}
+
+// Flags so `db push` / `migration repair` hit the LINKED project on any CLI:
+// v3 needs --remote (it defaults to the local database), v1/v2 reject it.
+let remoteFlagsCache = null;
+function supabaseRemoteFlags() {
+  if (remoteFlagsCache) return remoteFlagsCache;
+  const capture = (cmd) => {
+    try {
+      return execSync(cmd, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      return "";
+    }
+  };
+  const major = parseCliMajor(capture("supabase --version"));
+  const help = major === null ? capture("supabase db push --help") : "";
+  remoteFlagsCache = remoteTargetFlags(major, help);
+  log(
+    `CLI de Supabase ${major === null ? "(versión no detectada)" : `v${major}`}: ${
+      remoteFlagsCache.length ? `uso ${remoteFlagsCache.join(" ")}` : "apunta al proyecto enlazado por defecto"
+    }.`,
+  );
+  return remoteFlagsCache;
 }
 
 // Derive the Supabase project ref from the project URL.
@@ -288,7 +312,7 @@ function repairRetiredMigrations() {
   }
   log("Historial de migraciones: marco como revertidas las de la antigua rama provider/kapso y las de los PRs de la comunidad que main no tiene (no-op si nunca se aplicaron).");
   run(
-    `supabase migration repair --status reverted ${[
+    `${supabaseRemoteCommand("supabase migration repair", supabaseRemoteFlags())} --status reverted ${[
       ...RETIRED_KAPSO_BRANCH_MIGRATIONS,
       ...RETIRED_PR_STACK_MIGRATIONS,
     ].join(" ")}`,
@@ -306,7 +330,7 @@ function cmdDbPush(args) {
   log("(Si pide la DB password y corres esto sin interacción, exporta SUPABASE_DB_PASSWORD primero.)");
   run(`supabase link --project-ref ${ref}`);
   repairRetiredMigrations();
-  run("supabase db push");
+  run(supabaseRemoteCommand("supabase db push", supabaseRemoteFlags()));
   ok("Migraciones aplicadas (incluye pg_cron + pg_net).");
   log("➡️  Después del deploy: set-app-url <url> y luego cron-apply (o cron-sql) para agendar los crons (buffer-flush, automations y classify-topics).");
 }

@@ -132,6 +132,11 @@ SUPABASE_DB_PASSWORD='la-contraseña-del-paso-4' node scripts/setup.mjs db-push
 Esto corre `supabase link` + `supabase db push` (todas las migraciones, incluido el
 habilitado de **pg_cron + pg_net** para el cron del buffer).
 
+> **CLI de Supabase v3:** `db push` y `migration repair` apuntan a la base **local**
+> si no reciben `--remote`. `setup.mjs` detecta la versión (`supabase --version`) y
+> agrega `--remote --yes` solo en v3; con v1 o v2 los corre como siempre. Si corres
+> esos comandos a mano con v3, agrégales `--remote` tú también.
+
 **6. Despliega a Vercel.** En orden:
 
 ```bash
@@ -987,12 +992,12 @@ versiones que ni `main` ni esa lista conocen, y `supabase db push` se va a negar
 seguir. Es a propósito: nada se aplica a ciegas sobre una base con cambios
 desconocidos.
 
-1. Corre `supabase migration list` y anota las versiones que solo aparecen del lado
-   remoto (tu base).
+1. Corre `supabase migration list` (con CLI v3: `supabase migration list --remote`)
+   y anota las versiones que solo aparecen del lado remoto (tu base).
 2. Revisa qué creó cada una (su archivo en la rama del PR).
 3. Si aceptas conservar esos cambios en tu base, márcalas:
-   `supabase migration repair --status reverted <versiones>`. Luego vuelve a correr
-   `setup.mjs db-push`.
+   `supabase migration repair --status reverted <versiones>` (con CLI v3, agrega
+   `--remote`). Luego vuelve a correr `setup.mjs db-push`.
 
 Si no estás seguro de qué hicieron, pide ayuda antes de repararlas: son cambios de
 esquema que `main` no conoce.
