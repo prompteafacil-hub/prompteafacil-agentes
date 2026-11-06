@@ -41,6 +41,8 @@ Para **actualizar** una instalación existente, abre el proyecto en Claude y esc
 - **Knowledge Base** con búsqueda semántica (pgvector).
 - **Templates** y manejo de la ventana de 24h de Meta.
 - **Multi-tenant** con roles, RLS por workspace y super admin.
+- **Modo prueba** por workspace (Configuración → Integraciones) o global con
+  `AI_TEST_NUMBERS`: la IA solo responde a tus números mientras pruebas.
 
 ## Stack
 

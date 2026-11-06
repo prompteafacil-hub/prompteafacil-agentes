@@ -122,6 +122,13 @@ mock.module("./handoff-notifier.ts", {
   },
 });
 
+// Modo prueba por workspace: the settings read is its own module so these
+// tests keep their response queue; null = no own list (env decides).
+let workspaceSettings: unknown = null;
+mock.module("./test-mode-settings.ts", {
+  exports: { loadWorkspaceSettings: async () => workspaceSettings },
+});
+
 const { decide, applyTransition } = await import("./decision-engine.ts");
 
 const FOUND = {
@@ -142,6 +149,8 @@ function reset(queue: QueueEntry[] = [FOUND, { error: null }, { error: null }]) 
   enabledToolsError = null;
   rpcCalls.length = 0;
   rpcResult = { data: true, error: null };
+  workspaceSettings = null;
+  delete process.env.AI_TEST_NUMBERS;
 }
 
 const DECIDE = {
@@ -152,6 +161,33 @@ const DECIDE = {
 };
 
 // ── decide() ────────────────────────────────────────────────────────────
+
+test("modo prueba: la lista del workspace manda sobre AI_TEST_NUMBERS", async () => {
+  // Contacto con el número global: este workspace tiene su propia lista, así que no pasa.
+  reset([{ data: { state: "ai_active" }, error: null }, { data: { phone: "5491155550000" }, error: null }]);
+  process.env.AI_TEST_NUMBERS = "+5491155550000";
+  workspaceSettings = { ai_test_numbers: ["+52 55 1234 5678"] };
+  assert.deepEqual(await decide(DECIDE), { decision: "abstain", reason: "test_mode" });
+
+  // El número del workspace sí pasa.
+  reset([{ data: { state: "ai_active" }, error: null }, { data: { phone: "5215512345678" }, error: null }]);
+  process.env.AI_TEST_NUMBERS = "+5491155550000";
+  workspaceSettings = { ai_test_numbers: ["+52 55 1234 5678"] };
+  assert.equal((await decide(DECIDE)).decision, "respond");
+});
+
+test("modo prueba: sin lista del workspace se usa AI_TEST_NUMBERS", async () => {
+  reset([{ data: { state: "ai_active" }, error: null }, { data: { phone: "5215512345678" }, error: null }]);
+  process.env.AI_TEST_NUMBERS = "+5491155550000";
+  workspaceSettings = { timezone: "America/Mexico_City" };
+  assert.deepEqual(await decide(DECIDE), { decision: "abstain", reason: "test_mode" });
+});
+
+test("modo prueba apagado: no busca el teléfono del contacto", async () => {
+  reset([{ data: { state: "ai_active" }, error: null }]);
+  assert.equal((await decide(DECIDE)).decision, "respond");
+  assert.equal(lookups.length, 1);
+});
 
 test("decide abstains when the conversation lookup fails", async () => {
   reset([{ data: null, error: { message: "not found" } }]);

@@ -40,3 +40,36 @@ export function isAllowedInTestMode(
   if (target.length < 8) return false;
   return allowed.some((n) => suffix(n) === target);
 }
+
+// ── Modo prueba por workspace ────────────────────────────────────────────────
+// Un workspace puede tener su propia lista en workspaces.settings.ai_test_numbers
+// (la configura un admin en Configuración → Integraciones). Precedencia:
+//   1. el workspace tiene números propios → se usan esos (solo en ese workspace);
+//   2. si no, AI_TEST_NUMBERS (global, para toda la instalación);
+//   3. si tampoco, modo apagado.
+
+export const WORKSPACE_TEST_NUMBERS_KEY = "ai_test_numbers";
+
+/** Los números guardados en settings del workspace (array o texto con comas). */
+export function workspaceTestNumbers(settings: unknown): string[] {
+  if (typeof settings !== "object" || settings === null) return [];
+  const raw = (settings as Record<string, unknown>)[WORKSPACE_TEST_NUMBERS_KEY];
+  if (typeof raw === "string") return parseTestNumbers(raw);
+  if (Array.isArray(raw)) {
+    return parseTestNumbers(raw.filter((n): n is string => typeof n === "string").join(","));
+  }
+  return [];
+}
+
+export type TestModeSource = "workspace" | "env" | "off";
+
+export function resolveTestNumbers(
+  settings: unknown,
+  envValue: string | undefined | null,
+): { numbers: string[]; source: TestModeSource } {
+  const own = workspaceTestNumbers(settings);
+  if (own.length > 0) return { numbers: own, source: "workspace" };
+  const global = parseTestNumbers(envValue);
+  if (global.length > 0) return { numbers: global, source: "env" };
+  return { numbers: [], source: "off" };
+}

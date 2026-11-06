@@ -252,17 +252,32 @@ order by start_time desc limit 5;
 ### Modo prueba: la IA solo responde a tus números
 
 Úsalo cuando conectas un número que ya recibe mensajes reales (el del negocio) y
-quieres probar el agente sin que les conteste a tus clientes.
+quieres probar el agente sin que les conteste a tus clientes. Hay dos formas:
+
+**Por workspace (recomendado):** dentro del workspace, ve a **Configuración →
+Integraciones → Modo prueba**, actívalo y escribe tus números separados por coma
+(por ejemplo `+5491155550000, +5215512345678`). Solo afecta a **ese** workspace:
+los demás clientes siguen con la IA respondiendo a todos. Lo guarda un **admin**
+del workspace y no necesita redeploy. Para salir, apaga el switch.
+
+**Global, para toda la instalación:** la variable `AI_TEST_NUMBERS` aplica a
+**todos** los workspaces que no tengan su propia lista.
 
 ```bash
 vercel env add AI_TEST_NUMBERS production   # pega tus números separados por coma, p. ej. +5491155550000,+5215512345678
 vercel --prod                               # redeploy para que tome el cambio
 ```
 
-- Con la variable definida, la IA responde **solo** a esos números. Los mensajes de
-  todos los demás entran al inbox igual, sin respuesta automática.
-- Para salir del modo prueba: `vercel env rm AI_TEST_NUMBERS production` y
-  `vercel --prod`.
+Para quitarla: `vercel env rm AI_TEST_NUMBERS production` y `vercel --prod`.
+
+Cómo se combinan:
+
+- Si el workspace tiene números propios, se usan **esos** (aunque exista
+  `AI_TEST_NUMBERS`).
+- Si no tiene, se usa `AI_TEST_NUMBERS`.
+- Si no hay ninguna de las dos, el modo está apagado y la IA responde a todos.
+- Con el modo activo, los mensajes de los demás números entran al inbox igual, sin
+  respuesta automática.
 - El número se compara por sus últimos 10 dígitos, así que no importa si lo escribes
   con o sin el 9 de Argentina o el 1 de México.
 

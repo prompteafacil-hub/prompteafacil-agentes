@@ -13,7 +13,8 @@ import { isMissingColumnError, reportMissingFunctionOnce } from "@/shared/lib/db
 import { reserveLlmTurn } from "./cost-tracker";
 import { getEnabledTools } from "@/features/tools/services/tool-configs";
 import type { Tool } from "@/features/tools/core/tool";
-import { isAllowedInTestMode, parseTestNumbers } from "./test-mode";
+import { isAllowedInTestMode, resolveTestNumbers } from "./test-mode";
+import { loadWorkspaceSettings } from "./test-mode-settings";
 
 // The class lives in the pure state-machine module; callers of applyTransition
 // (the automation executor among them) import both from here.
@@ -79,9 +80,13 @@ export async function decide(opts: {
     return { decision: "abstain", reason: `state:${currentState}` };
   }
 
-  // 2b. Modo prueba (prompteafacil): con AI_TEST_NUMBERS definido, la IA solo
-  // responde a esos números. El mensaje ya quedó guardado en el inbox.
-  const testNumbers = parseTestNumbers(process.env.AI_TEST_NUMBERS);
+  // 2b. Modo prueba (prompteafacil): la IA solo responde a los números de
+  // prueba. Manda la lista propia del workspace (settings.ai_test_numbers);
+  // sin ella, AI_TEST_NUMBERS (global). El mensaje ya quedó guardado en el inbox.
+  const { numbers: testNumbers } = resolveTestNumbers(
+    await loadWorkspaceSettings(supabase, workspaceId),
+    process.env.AI_TEST_NUMBERS,
+  );
   if (testNumbers.length > 0) {
     const { data: contact } = await supabase
       .from("contacts")

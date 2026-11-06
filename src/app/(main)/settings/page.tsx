@@ -7,6 +7,10 @@ import { SettingsShell } from "@/features/settings/components/settings-shell";
 import { countJudgmentsToday } from "@/features/jev-judge/usage";
 import { readJevUses } from "@/features/jev-judge/uses";
 import { isWhatsAppProvider } from "@/features/inbox/services/whatsapp-provider";
+import {
+  parseTestNumbers,
+  WORKSPACE_TEST_NUMBERS_KEY,
+} from "@/features/inbox/services/test-mode";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -52,6 +56,7 @@ export default async function SettingsPage() {
     { data: toolsData },
     { data: toolConfigsData },
     { data: integrationsData },
+    { data: workspaceRow },
   ] = await Promise.all([
     svc
       .from("business_info")
@@ -67,7 +72,21 @@ export default async function SettingsPage() {
       .from("integrations")
       .select("provider, enabled, credentials, oauth_tokens, config")
       .eq("workspace_id", workspaceId),
+    svc.from("workspaces").select("settings").eq("id", workspaceId).maybeSingle(),
   ]);
+
+  // Modo prueba: the numbers are shown as saved (+digits), and only to the
+  // roles that see integrations. The global list's numbers never leave the server.
+  const savedTestNumbers = (workspaceRow?.settings as Record<string, unknown> | null)?.[
+    WORKSPACE_TEST_NUMBERS_KEY
+  ];
+  const testMode = {
+    numbers:
+      canReadConfig && Array.isArray(savedTestNumbers)
+        ? savedTestNumbers.filter((n): n is string => typeof n === "string")
+        : [],
+    globalActive: parseTestNumbers(process.env.AI_TEST_NUMBERS).length > 0,
+  };
 
   const initialAgents = await listAgents(svc, workspaceId);
   // Jev's settings live in the workspace's active WhatsApp integration
@@ -137,6 +156,7 @@ export default async function SettingsPage() {
       initialTools={toolsWithEnabled}
       initialIntegrations={maskedIntegrations}
       initialAgents={initialAgents}
+      testMode={canReadConfig ? testMode : null}
       teamEmailReady={Boolean(
         process.env.RESEND_API_KEY && process.env.HANDOFF_NOTIFY_FROM,
       )}

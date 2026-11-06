@@ -10,6 +10,10 @@ import { AutomationsTab } from "./automations-tab";
 import { N8nToolsTab } from "./n8n-tools-tab";
 import { KbTab } from "./kb-tab";
 import { AgentsTab } from "@/features/agents/components/agents-tab";
+import {
+  TestModeCard,
+  type TestModeInitial,
+} from "@/features/test-mode/components/test-mode-card";
 import type { AgentDto } from "@/features/agents/types";
 import type { JevSettings } from "@/features/jev-judge/components/jev-panel";
 
@@ -34,6 +38,8 @@ interface Props {
   jev: JevSettings;
   /** The server can send the team's handoff emails (Resend configured). */
   teamEmailReady?: boolean;
+  /** Modo prueba del workspace; null for roles that don't see integrations. */
+  testMode?: TestModeInitial | null;
 }
 
 export function SettingsShell({
@@ -46,6 +52,7 @@ export function SettingsShell({
   initialAgents = [],
   jev,
   teamEmailReady = false,
+  testMode = null,
 }: Props) {
   const biForForm = initialBusinessInfo as {
     structured: Record<string, unknown>;
@@ -95,6 +102,13 @@ export function SettingsShell({
               initialIntegrations={initialIntegrations}
               teamEmailReady={teamEmailReady}
             />
+            {testMode && (
+              <TestModeCard
+                workspaceId={workspaceId}
+                canEdit={role === "admin"}
+                initial={testMode}
+              />
+            )}
           </div>
         </TabsContent>
 
