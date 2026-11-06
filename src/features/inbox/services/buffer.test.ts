@@ -343,6 +343,22 @@ mock.module("./highlevel-client.ts", {
   },
 });
 
+// CRM stage automation: recorded, not run (its own tests cover the rules).
+const stageCalls: Row[] = [];
+mock.module("@/features/contacts/services/stage-automation.ts", {
+  exports: {
+    BOOKING_TOOLS: new Set(["schedule_calcom"]),
+    markEngagedIfConversationStarted: async (_db: unknown, opts: Row) => {
+      stageCalls.push({ fn: "engaged", ...opts });
+      return null;
+    },
+    promoteContactStage: async (_db: unknown, opts: Row) => {
+      stageCalls.push({ fn: "promote", ...opts });
+      return null;
+    },
+  },
+});
+
 const { processNextBatch, upsertBatch, reconcileOrphanedMessages, hasTimeToClaim } = await import(
   "./buffer.ts"
 );
@@ -415,6 +431,7 @@ function reset(meta: Row = {}) {
   rateAllowed = true;
   failUpdate = () => false;
   upsertRpc = () => ({ data: "batch_new", error: null });
+  stageCalls.length = 0;
 }
 
 // ── the turn ─────────────────────────────────────────────────────────────────
@@ -1527,4 +1544,46 @@ test("a retry owing a handoff after a write still tells the team to check the wr
   assert.deepEqual(transitions, [{ to: "handoff_pending", trigger: "tool_unsent:agent_stuck" }]);
   const note = notes().find((n) => (n.meta as Row).reason === "write_tool_unfinished");
   assert.match(String(note?.body), /schedule_highlevel/);
+});
+
+// ── CRM: etapa automática ────────────────────────────────────────────────────
+
+test("CRM: cada turno revisa si el contacto respondió a un mensaje nuestro", async () => {
+  reset();
+  decideResult = { decision: "abstain", reason: "state:human_active" };
+  await processNextBatch();
+  assert.deepEqual(stageCalls, [
+    {
+      fn: "engaged",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      contactId: "contact_1",
+      inboundAt: "2026-09-26T12:00:05Z",
+    },
+  ]);
+});
+
+test("CRM: una cita de Cal.com agendada califica al contacto", async () => {
+  reset();
+  generated = {
+    text: "Listo, quedó tu cita",
+    tools: [{ name: "schedule_calcom", sensitivity: "write", ok: true }],
+  };
+  await processNextBatch();
+  assert.deepEqual(
+    stageCalls.filter((c) => c.fn === "promote"),
+    [{ fn: "promote", workspaceId: "ws_1", contactId: "contact_1", event: "booking_confirmed" }],
+  );
+});
+
+test("CRM: una cita que falló (u otra tool) no mueve la etapa", async () => {
+  for (const tool of [
+    { name: "schedule_calcom", sensitivity: "write", ok: false },
+    { name: "schedule_highlevel", sensitivity: "write", ok: true },
+  ]) {
+    reset();
+    generated = { text: "Te confirmo en un momento", tools: [tool] };
+    await processNextBatch();
+    assert.equal(stageCalls.filter((c) => c.fn === "promote").length, 0, tool.name);
+  }
 });

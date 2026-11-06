@@ -19,6 +19,11 @@ import { buildSystemPrompt } from "./prompt-builder";
 import { getActiveAgent } from "@/features/agents/services/active-agent";
 import { maybeAutoProcess } from "@/features/agents/services/auto-tagging";
 import {
+  BOOKING_TOOLS,
+  markEngagedIfConversationStarted,
+  promoteContactStage,
+} from "@/features/contacts/services/stage-automation";
+import {
   getBusinessInfo,
   buildBusinessInfoContext,
   buildNowContext,
@@ -695,6 +700,15 @@ export async function processNextBatch(): Promise<ProcessBatchResult> {
       throw new Error(`${CONVERSATION_NOT_FOUND}: ${convError?.message}`);
     }
 
+    // ── 4b. CRM: the contact answered something we wrote → new → engaged.
+    // Whatever the AI decides below (it may be paused). Never throws.
+    await markEngagedIfConversationStarted(supabase, {
+      workspaceId: batch.workspace_id,
+      conversationId: batch.conversation_id,
+      contactId: conversation.contact_id as string,
+      inboundAt: consolidated.lastMessageAt,
+    });
+
     // ── 5. What an earlier attempt left behind ─────────────────────────────
     const pendingReply =
       typeof batch.meta.pending_reply === "string"
@@ -1028,6 +1042,15 @@ export async function processNextBatch(): Promise<ProcessBatchResult> {
       // Then its outcome. A write the tool itself reported as failed changed
       // nothing, so it no longer counts; otherwise it stays counted.
       onToolExecuted: async (execution) => {
+        // CRM: a booking that went through qualifies the contact (never
+        // moves it back, nor out of customer/lost). Never throws.
+        if (execution.ok === true && BOOKING_TOOLS.has(execution.name)) {
+          await promoteContactStage(supabase, {
+            workspaceId: batch.workspace_id,
+            contactId: conversation.contact_id as string,
+            event: "booking_confirmed",
+          });
+        }
         // handoff_human asked for a person: keep that even if the turn fails
         // before its farewell goes out.
         if (execution.name === "handoff_human" && execution.ok === true) {
