@@ -6,6 +6,7 @@ import {
   selectAutoTags,
   tagsPromptField,
 } from "@/features/agents/lib/allowed-tags";
+import { DECLINED_PROMPT_FIELD, declinedFromModel } from "@/features/contacts/lib/stages";
 
 // v1.5 backlog: opt-in AI auto-tagging + conversation summary. Runs
 // fire-and-forget after a reply is dispatched, only when the active agent has
@@ -66,7 +67,10 @@ export async function maybeAutoProcess(opts: {
     // from it and selectAutoTags drops anything else it returns.
     const allowedTags = parseAllowedTags(config.allowedTags);
     const fields: string[] = [];
-    if (config.autoTag) fields.push(tagsPromptField(allowedTags));
+    if (config.autoTag) {
+      fields.push(tagsPromptField(allowedTags));
+      fields.push(DECLINED_PROMPT_FIELD);
+    }
     if (config.summarize)
       fields.push('- "summary": resumen de la conversación en una sola frase.');
 
@@ -108,6 +112,23 @@ export async function maybeAutoProcess(opts: {
             err instanceof Error ? err.message : err,
           );
         }
+      }
+    }
+
+    // CRM: si el contacto dijo claramente que no le interesa, pasa a Perdido.
+    // Nunca desde Cliente, y el UPDATE condicionado no pisa una etapa que
+    // alguien cambió a mano mientras tanto.
+    if (config.autoTag && declinedFromModel(parsed)) {
+      try {
+        const { promoteContactStage } = await import(
+          "@/features/contacts/services/stage-automation"
+        );
+        await promoteContactStage(db, { workspaceId, contactId, event: "contact_declined" });
+      } catch (err) {
+        console.error(
+          "[auto-tagging] stage lost failed:",
+          err instanceof Error ? err.message : err,
+        );
       }
     }
 

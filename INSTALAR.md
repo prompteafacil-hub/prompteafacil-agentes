@@ -422,8 +422,10 @@ vercel --prod            # redeploy
   Necesita la migración `20261106000000_crm_contacts_board` (la aplica `db-push`):
   si despliegas antes, la página te avisa que falta.
 - La etapa avanza sola: a **Interesado** cuando el contacto responde a un mensaje
-  tuyo, y a **Calificado** cuando el agente agenda una cita en Cal.com. Nunca
-  retrocede ni saca a nadie de Cliente o Perdido.
+  tuyo, a **Calificado** cuando el agente agenda una cita en Cal.com y, con el
+  auto-etiquetado prendido, a **Perdido** cuando el contacto dice claramente que no
+  le interesa. Nunca retrocede ni saca a nadie de Cliente o Perdido: **Cliente** lo
+  pones tú, y a un contacto perdido que vuelve lo regresas tú.
 - En la configuración de cada agente, bajo **Auto-etiquetado**, puedes poner
   **Etiquetas permitidas** (por ejemplo `aprender, servicio`): la IA solo usará esas.
 - **Modo prueba por workspace** en Configuración → Integraciones. `AI_TEST_NUMBERS`

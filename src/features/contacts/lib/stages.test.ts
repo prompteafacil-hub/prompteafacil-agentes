@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { automaticStageFor, automaticTransition, CONTACT_STAGES } from "./stages";
+import { automaticStageFor, automaticTransition, CONTACT_STAGES, declinedFromModel } from "./stages";
 
 test("responder después de que le escribimos: new → engaged y nada más", () => {
   assert.equal(automaticStageFor("new", "contact_replied"), "engaged");
@@ -24,5 +24,20 @@ test("nunca saca a nadie de customer ni de lost, ni lo mueve hacia atrás", () =
     for (const s of from) {
       assert.ok(CONTACT_STAGES.indexOf(s) < CONTACT_STAGES.indexOf(to), `${s} → ${to}`);
     }
+  }
+});
+
+test("decir que no le interesa lo pasa a lost desde cualquier etapa abierta, nunca desde customer", () => {
+  for (const s of ["new", "engaged", "qualified"] as const) {
+    assert.equal(automaticStageFor(s, "contact_declined"), "lost", s);
+  }
+  assert.equal(automaticStageFor("customer", "contact_declined"), null);
+  assert.equal(automaticStageFor("lost", "contact_declined"), null);
+});
+
+test("solo un true literal del modelo cuenta como rechazo", () => {
+  assert.equal(declinedFromModel({ declined: true }), true);
+  for (const v of [false, "true", "si", 1, null, undefined]) {
+    assert.equal(declinedFromModel({ declined: v }), false, String(v));
   }
 });

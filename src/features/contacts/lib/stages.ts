@@ -20,11 +20,14 @@ export type StageEvent =
   /** El contacto respondió después de que le escribimos: empezó una conversación. */
   | "contact_replied"
   /** schedule_calcom agendó una cita. */
-  | "booking_confirmed";
+  | "booking_confirmed"
+  /** El modelo del auto-etiquetado leyó que el contacto dijo claramente que no le interesa. */
+  | "contact_declined";
 
 const TARGET: Record<StageEvent, ContactStage> = {
   contact_replied: "engaged",
   booking_confirmed: "qualified",
+  contact_declined: "lost",
 };
 
 /**
@@ -43,6 +46,8 @@ export function automaticTransition(event: StageEvent): {
   to: ContactStage;
 } {
   const to = TARGET[event];
+  // lost no está en el embudo: se llega desde cualquier etapa abierta, nunca desde customer.
+  if (to === "lost") return { from: [...FUNNEL], to };
   return { from: FUNNEL.slice(0, FUNNEL.indexOf(to)), to };
 }
 
@@ -53,4 +58,16 @@ export function automaticStageFor(
 ): ContactStage | null {
   const { from, to } = automaticTransition(event);
   return from.includes(current) ? to : null;
+}
+
+/**
+ * Campo del JSON del auto-etiquetado que marca a un contacto como perdido.
+ * Estricto a propósito: un "no" a una pregunta puntual no es perder al contacto.
+ */
+export const DECLINED_PROMPT_FIELD =
+  '- "declined": true SOLO si el cliente dijo de forma clara que no le interesa, que no va a comprar o contratar, o que no le escriban más (ej.: "no me interesa", "ya contraté con otro", "no me escriban más"). Si dijo "no" a una pregunta puntual, tiene dudas, pide tiempo ("lo pienso", "más adelante") o pregunta el precio, es false. Ante la duda, false.';
+
+/** Solo un true literal cuenta: cualquier otra cosa que devuelva el modelo no mueve la etapa. */
+export function declinedFromModel(parsed: Record<string, unknown>): boolean {
+  return parsed.declined === true;
 }
