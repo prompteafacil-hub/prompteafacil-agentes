@@ -137,6 +137,11 @@ habilitado de **pg_cron + pg_net** para el cron del buffer).
 > agrega `--remote --yes` solo en v3; con v1 o v2 los corre como siempre. Si corres
 > esos comandos a mano con v3, agrégales `--remote` tú también.
 
+Con el **CLI v3 de Supabase**, el script agrega `--remote --yes` solo: sin eso, el CLI
+apunta a una base local o se queda esperando una confirmación que nadie contesta
+(`HostedMutationConsentRequiredError`). Como `--yes` aplica los cambios sin preguntar,
+si lo corre un agente tiene que confirmar antes con el usuario que va a migrar su proyecto.
+
 **6. Despliega a Vercel.** En orden:
 
 ```bash

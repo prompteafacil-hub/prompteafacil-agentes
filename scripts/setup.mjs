@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { randomBytes } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -470,20 +470,30 @@ function cmdVercelEnv() {
   const skip = new Set(["NODE_ENV"]);
   const pushed = [];
   const failed = [];
+  // shell on Windows: the npm-installed CLI is vercel.cmd. Args are fixed
+  // names/flags; the value travels on stdin, never through the shell.
+  const addVar = (args, value) =>
+    spawnSync("vercel", ["env", "add", ...args], {
+      cwd: ROOT,
+      input: `${value}\n`,
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    });
   for (const [k, v] of Object.entries(env)) {
-    if (skip.has(k) || isPlaceholder(v)) continue;
+    // VERCEL_*: `vercel link` writes a short-lived VERCEL_OIDC_TOKEN into
+    // .env.local for local dev; it must never become a production var.
+    if (skip.has(k) || k.startsWith("VERCEL_") || isPlaceholder(v)) continue;
     // Don't push a localhost APP_URL to prod — set-app-url runs after deploy.
     if (k === "NEXT_PUBLIC_APP_URL" && /localhost/.test(v)) continue;
-    try {
-      execSync(`vercel env add ${k} production`, {
-        cwd: ROOT,
-        input: `${v}\n`,
-        stdio: ["pipe", "ignore", "ignore"],
-      });
-      pushed.push(k);
-    } catch {
-      failed.push(k); // most commonly: the var already exists in Vercel
+    let res = addVar([k, "production"], v);
+    // Vercel CLI 65+ refuses a NEXT_PUBLIC_ name that looks like a credential
+    // (NEXT_PUBLIC_SUPABASE_ANON_KEY) until it is typed explicitly. NEXT_PUBLIC_
+    // values ship to the browser by design, so "config" is the honest type.
+    if (res.status !== 0 && k.startsWith("NEXT_PUBLIC_") && /public_prefix_requires_type/.test(`${res.stdout}${res.stderr}`)) {
+      res = addVar([k, "--environment", "production", "--type", "config", "--yes"], v);
     }
+    if (res.status === 0) pushed.push(k);
+    else failed.push(k); // most commonly: the var already exists in Vercel
   }
   ok(`Vars enviadas a Vercel production: ${pushed.join(", ") || "(ninguna)"}`);
   if (failed.length) {
